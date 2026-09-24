@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <title>blob-editor demo</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        background:
+          radial-gradient(ellipse 80% 50% at 20% 10%, rgba(241, 14, 160, 0.35), transparent 50%),
+          radial-gradient(ellipse 60% 40% at 90% 20%, rgba(233, 82, 20, 0.3), transparent 45%),
+          radial-gradient(ellipse 50% 40% at 50% 90%, rgba(99, 102, 241, 0.25), transparent 50%),
+          #0a0a0a;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: #fff;
+      }
+      body.demo-light {
+        background:
+          radial-gradient(ellipse 80% 50% at 20% 10%, rgba(241, 14, 160, 0.2), transparent 50%),
+          radial-gradient(ellipse 60% 40% at 90% 20%, rgba(233, 82, 20, 0.18), transparent 45%),
+          radial-gradient(ellipse 50% 40% at 50% 90%, rgba(99, 102, 241, 0.12), transparent 50%),
+          #f5f5f5;
+        color: #111;
+      }
+      h1 {
+        text-align: center;
+        font-weight: 300;
+        font-size: 2rem;
+        margin: 1.5rem 0 0.5rem;
+      }
+      .hint {
+        text-align: center;
+        opacity: 0.7;
+        margin-bottom: 0.75rem;
+        font-size: 0.9rem;
+      }
+      .theme-bar {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+        margin-bottom: 1rem;
+      }
+      .theme-bar button {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(12px);
+        color: inherit;
+        padding: 0.45rem 0.9rem;
+        border-radius: 9999px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      body.demo-light .theme-bar button {
+        border-color: rgba(0, 0, 0, 0.12);
+        background: rgba(255, 255, 255, 0.55);
+      }
+      .theme-bar button.is-active {
+        border-color: #f10ea0;
+        box-shadow: 0 0 0 1px #f10ea0;
+      }
+      #root {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 0 1rem 1.5rem;
+        box-sizing: border-box;
+      }
+      pre {
+        max-width: 100%;
+        margin: 1rem auto;
+        padding: 1rem;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(12px);
+        color: #0f0;
+        border-radius: 1rem;
+        overflow: auto;
+        font-size: 0.75rem;
+      }
+      body.demo-light pre {
+        background: rgba(0, 0, 0, 0.85);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
