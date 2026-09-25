@@ -1,15 +1,16 @@
 # blob-editor
 
-Portable **BLOB Composition** core + React drop-in editor. Document SoT is versioned JSON **v2** (1024×1024) — never Konva/Fabric JSON.
+Portable **BLOB Composition** core + React drop-in editor, plus sibling **Print layout** for sticker sheets. Composition SoT is versioned JSON **v2** (1024×1024) — never Konva/Fabric JSON.
 
-See repo [`docs/diff.md`](../docs/diff.md) for host/worker migration and TS vs Flutter gaps.
+See repo [`docs/diff.md`](../docs/diff.md) for host/worker migration and TS vs Flutter gaps.  
+**Print / packs:** [`docs/print-layout-host.md`](../docs/print-layout-host.md).
 
 ## Install
 
 ```bash
 npm install blob-editor
 # peer: react, react-dom >= 18
-# worker optional: gifenc, ffmpeg-static
+# worker optional: gifenc, ffmpeg-static, pdf-lib (print PDF)
 ```
 
 ## Drop-in usage
@@ -91,13 +92,37 @@ import {
 ## Encode (Node worker only)
 
 ```ts
-import { encodeComposition } from "blob-editor/encode";
+import { encodeComposition, encodePrint } from "blob-editor/encode";
 
 const payload = await encodeComposition(doc, frameResolver, bytesResolver);
 // payload.exports: chat, thumbnail, full, mask?, gif?, video?
+
+const sheet = await encodePrint(printDoc, bytesResolver, { formats: ["png", "pdf"] });
+// sheet.exports.png — raster; sheet.exports.pdf — embedded source PNGs
+
+import { combinePdfs, combinePngsGrid } from "blob-editor/encode";
+const packPdf = await combinePdfs([sheetA.pdf, sheetB.pdf]);
+const contact = await combinePngsGrid([sheetA.png, sheetB.png]); // even grid
 ```
 
 Do **not** import `blob-editor/encode` in the browser bundle.
+
+## Print layout
+
+Drop-in page composer (A4 / A5 / custom mm). Document stores `asset_id` refs; host resolves sticker PNGs.
+
+```tsx
+import { PrintLayout } from "blob-editor/react";
+import { pageA4, layoutGrid } from "blob-editor/print";
+
+<PrintLayout
+  assets={[{ id: "s1", label: "Cat", thumbUrl }]}
+  resolveAsset={async (id) => loadImage(urlFor(id))}
+  onExport={({ document, previewPng }) => { /* persist; worker encodePrint for PDF */ }}
+/>
+```
+
+Demo (`npm run demo`): start screen chooses **Composition** or **Print layout**.
 
 ## Document sketch (v2)
 

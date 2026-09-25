@@ -22,11 +22,16 @@
       "types": "./dist/encode.d.ts",
       "import": "./dist/encode.js"
     },
+    "./print": {
+      "types": "./dist/core/print/index.d.ts",
+      "import": "./dist/core/print/index.js"
+    },
     "./react/blob-editor.css": "./src/react/blob-editor.css"
   },
   "optionalDependencies": {
     "ffmpeg-static": "^5.2.0",
-    "gifenc": "^1.0.3"
+    "gifenc": "^1.0.3",
+    "pdf-lib": "^1.17.1"
   },
   "files": [
     "dist",

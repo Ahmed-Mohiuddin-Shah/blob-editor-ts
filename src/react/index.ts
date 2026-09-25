@@ -1,4 +1,5 @@
 export { BlobEditor, type BlobEditorProps } from "./BlobEditor.js";
+export { PrintLayout, type PrintLayoutProps } from "./PrintLayout.js";
 export {
   DEFAULT_THEME,
   themeStyle,
