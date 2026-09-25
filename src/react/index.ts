@@ -9,3 +9,6 @@ export {
 } from "./theme.js";
 export { TextInspector, type TextInspectorProps } from "./TextInspector.js";
 export { TransformInspector, type TransformInspectorProps } from "./TransformInspector.js";
+export { EditorHeader, type EditorHeaderProps } from "./EditorHeader.js";
+export { ToolNav, type ToolNavProps, type ToolId } from "./ToolNav.js";
+export { ToolPanel, type ToolPanelProps } from "./ToolPanel.js";
