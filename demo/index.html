@@ -16,6 +16,11 @@
         font-family: "Segoe UI", system-ui, sans-serif;
         color: #fff;
       }
+      body.demo-print {
+        overflow: hidden;
+        height: 100dvh;
+        max-height: 100dvh;
+      }
       body.demo-light {
         background:
           radial-gradient(ellipse 80% 50% at 20% 10%, rgba(241, 14, 160, 0.2), transparent 50%),
@@ -41,6 +46,11 @@
         gap: 0.5rem;
         justify-content: center;
         margin-bottom: 1rem;
+        flex-wrap: wrap;
+      }
+      body.demo-print .theme-bar {
+        margin: 0.35rem 0;
+        flex: 0 0 auto;
       }
       .theme-bar button {
         appearance: none;
@@ -67,25 +77,42 @@
         padding: 0 1rem 1.5rem;
         box-sizing: border-box;
       }
-      .demo-print-shell {
-        height: calc(100dvh - 4.5rem);
-        max-height: calc(100dvh - 4.5rem);
+      body.demo-print #root {
+        max-width: none;
+        height: 100dvh;
+        max-height: 100dvh;
+        padding: 0 0.75rem 0.5rem;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
+      }
+      .demo-print-shell {
+        width: 100%;
+        flex: 1 1 auto;
         min-height: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        overflow: hidden;
       }
       .demo-print-shell > .blob-print-layout {
         flex: 1 1 auto;
+        align-self: stretch;
+        width: 100%;
+        min-width: 0;
         min-height: 0;
         max-width: none;
         height: 100%;
       }
       .demo-print-log {
-        margin: 0.35rem auto 0;
-        padding: 0.35rem 0.75rem;
+        flex: 0 0 auto;
+        margin: 0.25rem 0 0;
+        padding: 0.25rem 0.5rem;
         font-size: 0.7rem;
-        max-height: 2.5rem;
+        max-height: 1.5rem;
         overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
       }
       pre {
         max-width: 100%;

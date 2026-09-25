@@ -494,16 +494,22 @@
   accent-color:var(--blob-primary,#f10ea0);
 }
 
-/* —— Print layout (portrait-first, no page scroll) —— */
-.blob-print-layout {
-  height: min(100dvh, 100%);
-  max-height: min(100dvh, 100%);
+/* —— Print layout (portrait stack / wide side-by-side, no page scroll) —— */
+.blob-print-layout.blob-editor {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  height: 100%;
+  max-height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0.5rem;
   padding: 0.5rem;
   box-sizing: border-box;
+  container-type: inline-size;
+  container-name: blob-print;
 }
 
 .blob-print-topbar {
@@ -512,6 +518,7 @@
   align-items: center;
   gap: 0.5rem;
   min-height: 44px;
+  width: 100%;
 }
 
 .blob-print-back,
@@ -535,19 +542,19 @@
 
 .blob-print-preset {
   appearance: none;
-  width: 44px;
   height: 44px;
   min-width: 44px;
+  padding: 0 0.75rem;
   border-radius: 9999px;
   border: 1px solid var(--blob-btn-border, rgba(0, 0, 0, 0.12));
   background: var(--blob-btn, rgba(0, 0, 0, 0.06));
   color: var(--blob-fg, #111);
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   cursor: pointer;
-  padding: 0;
+  white-space: nowrap;
 }
 
 .blob-print-preset.is-active {
@@ -563,41 +570,43 @@
   padding: 0 1rem;
 }
 
-.blob-print-stage-wrap {
-  flex: 0 0 70%;
-  max-height: 70%;
+/* Stage + chrome share remaining height after topbar */
+.blob-print-body {
+  flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+
+.blob-print-stage-wrap {
+  flex: 1 1 70%;
+  min-height: 0;
+  width: 100%;
+  container-type: size;
+  display: grid;
+  place-items: center;
   touch-action: none;
   overflow: hidden;
 }
 
 .blob-print-stage {
   position: relative;
+  box-sizing: border-box;
+  aspect-ratio: var(--print-aspect, 0.7071);
+  width: min(100cqw, calc(100cqh * var(--print-aspect, 0.7071)));
+  height: auto;
   max-width: 100%;
   max-height: 100%;
-  width: auto;
-  height: 100%;
-  aspect-ratio: var(--print-aspect, 0.707);
-  /* Contain: height-driven when tall page, width-driven when wide */
-  width: min(100%, calc(100% * var(--print-aspect, 0.707) / var(--print-aspect, 0.707)));
-  max-width: min(100%, calc(100cqi));
   border: 1px solid var(--blob-glass-border, rgba(0, 0, 0, 0.12));
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   user-select: none;
-  box-sizing: border-box;
+  background: #fff;
 }
-/* Prefer fitting inside stage-wrap via object-fit-like constraint */
-.blob-print-stage-wrap > .blob-print-stage {
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: var(--print-aspect, 0.707);
-}
+
 .blob-print-item {
   position: absolute;
   box-sizing: border-box;
@@ -636,12 +645,12 @@
 }
 
 .blob-print-chrome {
-  flex: 1 1 auto;
+  flex: 0 1 30%;
   min-height: 0;
+  max-height: 32%;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  justify-content: flex-end;
   overflow: hidden;
 }
 
@@ -650,15 +659,22 @@
 }
 
 .blob-print-panel {
-  flex: 0 1 auto;
-  max-height: min(22vh, 160px);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow: hidden;
   padding: 0.5rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .blob-print-panel-body {
+  flex: 1 1 auto;
+  min-height: 56px;
   overflow: hidden;
-  min-height: 0;
+  display: flex;
+  align-items: center;
 }
 
 .blob-print-hscroll {
@@ -670,7 +686,11 @@
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   align-items: center;
-  padding-bottom: 0.15rem;
+  width: 100%;
+  height: 100%;
+  min-height: 56px;
+  padding-bottom: 0.1rem;
+  box-sizing: border-box;
 }
 
 .blob-print-tray-item {
@@ -736,6 +756,88 @@
 .blob-print-panel-hint {
   margin: 0;
   white-space: nowrap;
+}
+
+/* Wide: tools | stage side-by-side */
+@container blob-print (min-width: 720px) {
+  .blob-print-body {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .blob-print-chrome {
+    order: 0;
+    flex: 0 0 min(280px, 32%);
+    max-height: none;
+    height: 100%;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .blob-print-section-nav.blob-tool-nav {
+    flex-direction: column;
+    flex: 0 0 88px;
+    width: 88px;
+    overflow-x: visible;
+    overflow-y: auto;
+    align-self: stretch;
+    height: auto;
+  }
+
+  .blob-print-section-nav .blob-tool-nav-item {
+    width: 100%;
+    min-width: 0;
+    flex: 0 0 44px;
+  }
+
+  .blob-print-panel {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-height: none;
+    height: 100%;
+  }
+
+  .blob-print-panel-body {
+    align-items: flex-start;
+  }
+
+  .blob-print-hscroll {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+    align-items: stretch;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .blob-print-tray-item {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    max-width: 96px;
+    align-self: center;
+  }
+
+  .blob-print-controls-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .blob-print-range,
+  .blob-print-range input[type="range"] {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .blob-print-stage-wrap {
+    order: 1;
+    flex: 1 1 auto;
+    max-height: none;
+    height: 100%;
+  }
 }
 
 .blob-muted {

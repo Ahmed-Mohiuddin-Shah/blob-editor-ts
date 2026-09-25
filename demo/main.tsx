@@ -71,6 +71,11 @@ function App() {
     document.body.classList.toggle("demo-light", !dark);
   }, [themeMode]);
 
+  useEffect(() => {
+    document.body.classList.toggle("demo-print", mode === "print");
+    return () => document.body.classList.remove("demo-print");
+  }, [mode]);
+
   const themeBar = (
     <div className="theme-bar">
       {(["light", "system", "dark"] as ThemeMode[]).map((m) => (

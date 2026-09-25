@@ -36,8 +36,26 @@
   "files": [
     "dist",
     "src/react/blob-editor.css",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ahmed-Mohiuddin-Shah/blob-editor-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ahmed-Mohiuddin-Shah/blob-editor-ts/issues"
+  },
+  "homepage": "https://github.com/Ahmed-Mohiuddin-Shah/blob-editor-ts#readme",
+  "keywords": [
+    "blob",
+    "composition",
+    "sticker",
+    "editor",
+    "react",
+    "konva"
+  ],
+  "author": "Ahmed Mohiuddin Shah",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",

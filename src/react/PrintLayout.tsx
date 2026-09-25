@@ -379,7 +379,7 @@ export function PrintLayout({
               className={`blob-print-preset${preset === k ? " is-active" : ""}`}
               onClick={() => applyPreset(k)}
             >
-              {k === "square" ? "Square" : k.toUpperCase()}
+              {k === "square" ? "1:1" : k.toUpperCase()}
             </button>
           ))}
         </div>
@@ -393,82 +393,88 @@ export function PrintLayout({
         </button>
       </header>
 
-      <div
-        className="blob-print-stage-wrap"
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onClick={() => setSelectedId(null)}
-      >
-        <div ref={stageRef} className="blob-print-stage" style={stageStyle}>
-          {doc.items.map((it) => {
-            const thumb = thumbs[it.asset_id];
-            const left = `${(it.x_mm / doc.page.width_mm) * 100}%`;
-            const top = `${(it.y_mm / doc.page.height_mm) * 100}%`;
-            const width = `${(it.width_mm / doc.page.width_mm) * 100}%`;
-            const sel = it.id === selectedId;
-            return (
-              <div
-                key={it.id}
-                className={`blob-print-item${sel ? " is-selected" : ""}`}
-                style={{
-                  left,
-                  top,
-                  width,
-                  aspectRatio: "1",
-                  transform: `rotate(${it.rotation_deg}deg)`,
-                }}
-                onPointerDown={(e) => onPointerDownItem(e, it.id)}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {thumb ? <img src={thumb} alt="" draggable={false} /> : null}
-                {sel && (
-                  <button
-                    type="button"
-                    className="blob-print-resize"
-                    aria-label="Resize"
-                    onPointerDown={(e) => onPointerDownResize(e, it.id)}
-                  />
-                )}
-              </div>
-            );
-          })}
-          {doc.page.cut_marks && <div className="blob-print-cutmarks" aria-hidden />}
-        </div>
-      </div>
-
-      <div className="blob-print-chrome">
-        <nav className="blob-tool-nav blob-print-section-nav" role="tablist" aria-label="Print tools">
-          {(Object.keys(SECTION_LABELS) as PrintSection[]).map((id) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={section === id}
-              className={`blob-tool-nav-item${section === id ? " is-active" : ""}`}
-              onClick={() => selectSection(id)}
-            >
-              {SECTION_LABELS[id]}
-            </button>
-          ))}
-        </nav>
-
-        {section && (
-          <div className="blob-tool-panel blob-print-panel" role="tabpanel" aria-label={SECTION_LABELS[section]}>
-            <div className="blob-tool-panel-head">
-              <span className="blob-inspector-title">{SECTION_LABELS[section]}</span>
-              <button
-                type="button"
-                className="blob-btn blob-btn-ghost blob-tool-panel-close"
-                onClick={() => setSection(null)}
-                aria-label="Collapse panel"
-              >
-                Close
-              </button>
-            </div>
-            <div className="blob-tool-panel-body blob-print-panel-body">{panelBody}</div>
+      <div className="blob-print-body">
+        <div
+          className="blob-print-stage-wrap"
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onClick={() => setSelectedId(null)}
+        >
+          <div ref={stageRef} className="blob-print-stage" style={stageStyle}>
+            {doc.items.map((it) => {
+              const thumb = thumbs[it.asset_id];
+              const left = `${(it.x_mm / doc.page.width_mm) * 100}%`;
+              const top = `${(it.y_mm / doc.page.height_mm) * 100}%`;
+              const width = `${(it.width_mm / doc.page.width_mm) * 100}%`;
+              const sel = it.id === selectedId;
+              return (
+                <div
+                  key={it.id}
+                  className={`blob-print-item${sel ? " is-selected" : ""}`}
+                  style={{
+                    left,
+                    top,
+                    width,
+                    aspectRatio: "1",
+                    transform: `rotate(${it.rotation_deg}deg)`,
+                  }}
+                  onPointerDown={(e) => onPointerDownItem(e, it.id)}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {thumb ? <img src={thumb} alt="" draggable={false} /> : null}
+                  {sel && (
+                    <button
+                      type="button"
+                      className="blob-print-resize"
+                      aria-label="Resize"
+                      onPointerDown={(e) => onPointerDownResize(e, it.id)}
+                    />
+                  )}
+                </div>
+              );
+            })}
+            {doc.page.cut_marks && <div className="blob-print-cutmarks" aria-hidden />}
           </div>
-        )}
+        </div>
+
+        <div className="blob-print-chrome">
+          <nav className="blob-tool-nav blob-print-section-nav" role="tablist" aria-label="Print tools">
+            {(Object.keys(SECTION_LABELS) as PrintSection[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={section === id}
+                className={`blob-tool-nav-item${section === id ? " is-active" : ""}`}
+                onClick={() => selectSection(id)}
+              >
+                {SECTION_LABELS[id]}
+              </button>
+            ))}
+          </nav>
+
+          {section && (
+            <div
+              className="blob-tool-panel blob-print-panel"
+              role="tabpanel"
+              aria-label={SECTION_LABELS[section]}
+            >
+              <div className="blob-tool-panel-head">
+                <span className="blob-inspector-title">{SECTION_LABELS[section]}</span>
+                <button
+                  type="button"
+                  className="blob-btn blob-btn-ghost blob-tool-panel-close"
+                  onClick={() => setSection(null)}
+                  aria-label="Collapse panel"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="blob-tool-panel-body blob-print-panel-body">{panelBody}</div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

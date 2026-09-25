@@ -1,16 +1,22 @@
 # blob-editor
 
-Portable **BLOB Composition** core + React drop-in editor, plus sibling **Print layout** for sticker sheets. Composition SoT is versioned JSON **v2** (1024×1024) — never Konva/Fabric JSON.
+**BLOB Composition** core + React drop-in editor, plus sibling **Print layout** for sticker sheets. Composition source of truth is versioned JSON **v2** (1024×1024) — never Konva/Fabric JSON.
 
-See repo [`docs/diff.md`](../docs/diff.md) for host/worker migration and TS vs Flutter gaps.  
-**Print / packs:** [`docs/print-layout-host.md`](../docs/print-layout-host.md).
+Companion Flutter package: [`blob_editor`](https://pub.dev/packages/blob_editor).
+
+| Entry | Use |
+|-------|-----|
+| `blob-editor` / `blob-editor/core` | Document ops, validate, render (no React) |
+| `blob-editor/react` | `BlobEditor`, `PrintLayout` + CSS |
+| `blob-editor/print` | Print document helpers (`pageA4`, `layoutGrid`, …) |
+| `blob-editor/encode` | **Node only** — gif/mp4/PDF encode |
 
 ## Install
 
 ```bash
 npm install blob-editor
 # peer: react, react-dom >= 18
-# worker optional: gifenc, ffmpeg-static, pdf-lib (print PDF)
+# worker optional: gifenc, ffmpeg-static, pdf-lib
 ```
 
 ## Drop-in usage
@@ -29,10 +35,10 @@ import "blob-editor/react/blob-editor.css";
   themeMode="system"
   onCancel={() => {}}
   onExport={({ document, exports, mask, meta }) => {
-    // document = v2 Composition JSON (SoT)
+    // document = v2 Composition JSON
     // exports.chat / thumbnail / full = still PNGs
     // mask = baked cutout alpha when brush/polygon/outline used
-    // host uploads + server runs encodeComposition for gif/mp4
+    // host uploads; server runs encodeComposition for gif/mp4
   }}
 />
 ```
@@ -44,7 +50,7 @@ import "blob-editor/react/blob-editor.css";
 | `sourceAsset?` | URL / `File` / `Blob`. If omitted, opens media picker. |
 | `document?` | Initial composition JSON (edit / remix); v1 auto-migrates. |
 | `primary` / `onPrimary` / `secondary` / `onSecondary` | Theme colors |
-| `blocky` | `true` = sharp square chrome; `false` = Blobby soft radii |
+| `blocky` | `true` = sharp chrome; `false` = soft radii |
 | `themeMode` | `"light"` \| `"dark"` \| `"system"` (default) |
 | `onExport` | `{ document, exports: { chat, thumbnail, full }, mask?, meta? }` |
 | `onCancel?` | Dismiss without export |
@@ -59,7 +65,7 @@ Kind-gated UI (image ⊃ gif ⊃ video): crop/scale/rotate/text/undo; BG + multi
 - **Clear mask** — drops `mask_asset_id`.
 - **White sticker border** — optional outline with width slider.
 
-The editor stage composites the same mask as export previews (`destination-in`).
+Stage composites the same mask as export previews (`destination-in`). No in-package ML / auto remove-BG.
 
 ### Layout
 
@@ -122,8 +128,12 @@ import { pageA4, layoutGrid } from "blob-editor/print";
 />
 ```
 
-Demo (`npm run demo`): start screen chooses **Composition** or **Print layout**.
-
 ## Document sketch (v2)
 
-`version: 2`, `canvas` 1024², `duration_ms`, `fps`, `audio: { mute_source } | null`, `objects[]` with media `kind` / single `keep` trim / `mask_asset_id` / `outline`. See `docs/diff.md`.
+`version: 2`, `canvas` 1024², `duration_ms`, `fps`, `audio: { mute_source } | null`, `objects[]` with media `kind` / single `keep` trim / `mask_asset_id` / `outline`. Snake_case JSON (`scale_x`, `asset_id`, `start_ms`, …).
+
+Host flow: UI exports document + still PNGs (+ optional mask) → POST to server → worker `encodeComposition` → gif/mp4.
+
+## License
+
+MIT
