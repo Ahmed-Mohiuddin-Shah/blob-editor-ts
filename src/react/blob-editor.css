@@ -89,10 +89,12 @@
 
 .blob-tool-nav-item {
   appearance: none;
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   min-width: 64px;
+  height: 44px;
   min-height: 44px;
-  padding: 0.4rem 0.65rem;
+  max-height: 44px;
+  padding: 0 0.65rem;
   border: 1px solid var(--blob-btn-border, transparent);
   border-radius: var(--blob-radius, 9999px);
   background: var(--blob-btn, #e8e8e8);
@@ -102,6 +104,10 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
 .blob-tool-nav-item.is-active {
@@ -163,7 +169,7 @@
     grid-area: tools;
     order: unset;
     flex-direction: row;
-    align-items: stretch;
+    align-items: flex-start;
     gap: 0.5rem;
   }
 
@@ -186,16 +192,20 @@
 
   .blob-tool-nav {
     flex-direction: column;
+    align-items: stretch;
     overflow-x: visible;
     overflow-y: auto;
     flex: 0 0 auto;
     width: 88px;
+    height: auto;
+    align-self: flex-start;
     padding: 0;
   }
 
   .blob-tool-nav-item {
     width: 100%;
     min-width: 0;
+    flex: 0 0 44px;
   }
 
   .blob-tool-panel {
