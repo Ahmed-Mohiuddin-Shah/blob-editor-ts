@@ -146,37 +146,28 @@ function App() {
 
   return (
     <>
-      <h1>print layout</h1>
-      <p className="hint">Add stickers from the tray, Auto grid, or drag freely → Export document + preview PNG</p>
       {themeBar}
-      {Object.keys(urls).length > 0 && (
-        <PrintLayout
-          blocky={false}
-          themeMode={themeMode}
-          assets={demoAssets.map((a) => ({
-            id: a.id,
-            label: a.label,
-            thumbUrl: urls[a.id],
-          }))}
-          resolveAsset={resolveAsset}
-          onCancel={() => setMode("pick")}
-          onExport={(payload: PrintExportPayload) => {
-            setLog(
-              JSON.stringify(
-                {
-                  previewPng: payload.previewPng.size,
-                  page: payload.document.page,
-                  items: payload.document.items.length,
-                  document: payload.document,
-                },
-                null,
-                2,
-              ),
-            );
-          }}
-        />
-      )}
-      {log && <pre>{log}</pre>}
+      {Object.keys(urls).length > 0 ? (
+        <div className="demo-print-shell">
+          <PrintLayout
+            blocky={false}
+            themeMode={themeMode}
+            assets={demoAssets.map((a) => ({
+              id: a.id,
+              label: a.label,
+              thumbUrl: urls[a.id],
+            }))}
+            resolveAsset={resolveAsset}
+            onCancel={() => setMode("pick")}
+            onExport={(payload: PrintExportPayload) => {
+              setLog(
+                `preview=${payload.previewPng.size}B items=${payload.document.items.length}`,
+              );
+            }}
+          />
+        </div>
+      ) : null}
+      {log ? <pre className="demo-print-log">{log}</pre> : null}
     </>
   );
 }

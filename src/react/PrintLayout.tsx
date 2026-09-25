@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import {
   addPrintItem,
   createEmptyPrintDocument,
@@ -42,6 +42,15 @@ export interface PrintLayoutProps {
   onCancel?: () => void;
 }
 
+type PrintSection = "stickers" | "layout" | "transform" | "page";
+
+const SECTION_LABELS: Record<PrintSection, string> = {
+  stickers: "Stickers",
+  layout: "Layout",
+  transform: "Transform",
+  page: "Page",
+};
+
 type DragState =
   | { kind: "move"; id: string; ox: number; oy: number; startX: number; startY: number }
   | { kind: "resize"; id: string; startW: number; startX: number };
@@ -81,15 +90,16 @@ export function PrintLayout({
     return createEmptyPrintDocument(pageA4());
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [section, setSection] = useState<PrintSection | null>("stickers");
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [bitmaps, setBitmaps] = useState<Record<string, CanvasImageSource>>({});
   const [busy, setBusy] = useState(false);
   const [gridRows, setGridRows] = useState(3);
   const [gridCols, setGridCols] = useState(3);
+  const [preset, setPreset] = useState<"a4" | "a5" | "square">("a4");
   const stageRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
 
-  // Load thumbs + bitmaps for tray / stage
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -124,10 +134,7 @@ export function PrintLayout({
     };
   }, [assets, resolveAsset]);
 
-  const resolver = useCallback(
-    (id: string) => bitmaps[id] ?? null,
-    [bitmaps],
-  );
+  const resolver = useCallback((id: string) => bitmaps[id] ?? null, [bitmaps]);
 
   function mmPerPx(): number {
     const el = stageRef.current;
@@ -140,7 +147,10 @@ export function PrintLayout({
   function applyPreset(kind: "a4" | "a5" | "square") {
     const page =
       kind === "a4" ? pageA4() : kind === "a5" ? pageA5() : pageCustom(210, 210);
-    setDoc((d) => setPrintPage(d, { ...page, cut_marks: d.page.cut_marks, background: d.page.background }));
+    setPreset(kind);
+    setDoc((d) =>
+      setPrintPage(d, { ...page, cut_marks: d.page.cut_marks, background: d.page.background }),
+    );
   }
 
   function onAutoGrid() {
@@ -154,12 +164,17 @@ export function PrintLayout({
     setDoc((d) => addPrintItem(d, { asset_id: assetId, width_mm: 40 }));
   }
 
+  function selectSection(id: PrintSection) {
+    setSection((cur) => (cur === id ? null : id));
+  }
+
   function onPointerDownItem(e: ReactPointerEvent, id: string) {
     e.stopPropagation();
     e.preventDefault();
     const it = doc.items.find((i) => i.id === id);
     if (!it) return;
     setSelectedId(id);
+    setSection((s) => s ?? "transform");
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     dragRef.current = {
       kind: "move",
@@ -178,12 +193,7 @@ export function PrintLayout({
     if (!it) return;
     setSelectedId(id);
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = {
-      kind: "resize",
-      id,
-      startW: it.width_mm,
-      startX: e.clientX,
-    };
+    dragRef.current = { kind: "resize", id, startW: it.width_mm, startX: e.clientX };
   }
 
   function onPointerMove(e: ReactPointerEvent) {
@@ -214,33 +224,43 @@ export function PrintLayout({
     }
   }
 
+  const aspect = pageAspect(doc.page);
   const stageStyle: CSSProperties = {
-    aspectRatio: `${pageAspect(doc.page)}`,
+    aspectRatio: `${aspect}`,
+    ["--print-aspect" as string]: String(aspect),
     background:
       doc.page.background === "transparent"
         ? "repeating-conic-gradient(#ddd 0% 25%, #fff 0% 50%) 50% / 16px 16px"
         : doc.page.background,
   };
 
-  return (
-    <div className="blob-editor blob-print-layout" style={style as CSSProperties}>
-      <div className="blob-editor-header">
-        {onCancel && (
-          <button type="button" className="blob-btn" onClick={onCancel}>
-            Cancel
+  let panelBody: ReactNode = null;
+  if (section === "stickers") {
+    panelBody = (
+      <div className="blob-print-hscroll" role="list">
+        {assets.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            className="blob-print-tray-item"
+            title={a.label ?? a.id}
+            onClick={() => addAsset(a.id)}
+          >
+            {thumbs[a.id] ? (
+              <img src={thumbs[a.id]} alt={a.label ?? a.id} />
+            ) : (
+              <span>{a.label ?? a.id}</span>
+            )}
           </button>
-        )}
-        <button type="button" className="blob-btn" onClick={() => applyPreset("a4")}>
-          A4
-        </button>
-        <button type="button" className="blob-btn" onClick={() => applyPreset("a5")}>
-          A5
-        </button>
-        <button type="button" className="blob-btn" onClick={() => applyPreset("square")}>
-          Square
-        </button>
-        <label className="blob-print-grid-label">
-          Grid
+        ))}
+        {!assets.length && <span className="blob-muted">No stickers</span>}
+      </div>
+    );
+  } else if (section === "layout") {
+    panelBody = (
+      <div className="blob-print-hscroll blob-print-controls-row">
+        <label className="blob-print-chip-control">
+          Rows
           <input
             type="number"
             min={1}
@@ -248,7 +268,9 @@ export function PrintLayout({
             value={gridRows}
             onChange={(e) => setGridRows(Math.max(1, Number(e.target.value) || 1))}
           />
-          ×
+        </label>
+        <label className="blob-print-chip-control">
+          Cols
           <input
             type="number"
             min={1}
@@ -257,10 +279,56 @@ export function PrintLayout({
             onChange={(e) => setGridCols(Math.max(1, Number(e.target.value) || 1))}
           />
         </label>
-        <button type="button" className="blob-btn" onClick={onAutoGrid}>
+        <button type="button" className="blob-btn blob-btn-primary" onClick={onAutoGrid}>
           Auto grid
         </button>
-        <label className="blob-print-check">
+      </div>
+    );
+  } else if (section === "transform") {
+    panelBody = selected ? (
+      <div className="blob-print-hscroll blob-print-controls-row">
+        <label className="blob-print-chip-control blob-print-range">
+          Size
+          <input
+            type="range"
+            min={8}
+            max={Math.min(doc.page.width_mm, doc.page.height_mm)}
+            value={selected.width_mm}
+            onChange={(e) =>
+              setDoc((d) => resizePrintItem(d, selected.id, Number(e.target.value)))
+            }
+          />
+        </label>
+        <label className="blob-print-chip-control blob-print-range">
+          Rotate
+          <input
+            type="range"
+            min={-180}
+            max={180}
+            value={selected.rotation_deg}
+            onChange={(e) =>
+              setDoc((d) => rotatePrintItem(d, selected.id, Number(e.target.value)))
+            }
+          />
+        </label>
+        <button
+          type="button"
+          className="blob-btn"
+          onClick={() => {
+            setDoc((d) => removePrintItem(d, selected.id));
+            setSelectedId(null);
+          }}
+        >
+          Remove
+        </button>
+      </div>
+    ) : (
+      <p className="blob-muted blob-print-panel-hint">Select a sticker on the page</p>
+    );
+  } else if (section === "page") {
+    panelBody = (
+      <div className="blob-print-hscroll blob-print-controls-row">
+        <label className="blob-print-check blob-print-chip-control">
           <input
             type="checkbox"
             checked={doc.page.cut_marks}
@@ -270,126 +338,137 @@ export function PrintLayout({
           />
           Cut marks
         </label>
-        <span style={{ flex: 1 }} />
         <button
           type="button"
-          className="blob-btn blob-btn-primary"
+          className="blob-btn"
+          onClick={() =>
+            setDoc((d) =>
+              setPrintPage(d, {
+                ...d.page,
+                background: d.page.background === "transparent" ? "#FFFFFF" : "transparent",
+              }),
+            )
+          }
+        >
+          {doc.page.background === "transparent" ? "White BG" : "Clear BG"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="blob-editor blob-print-layout" style={style as CSSProperties}>
+      <header className="blob-print-topbar">
+        {onCancel ? (
+          <button
+            type="button"
+            className="blob-btn blob-print-back"
+            onClick={onCancel}
+            aria-label="Back"
+          >
+            ←
+          </button>
+        ) : (
+          <span className="blob-print-back-spacer" />
+        )}
+        <div className="blob-print-presets" role="group" aria-label="Page size">
+          {(["a4", "a5", "square"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={`blob-print-preset${preset === k ? " is-active" : ""}`}
+              onClick={() => applyPreset(k)}
+            >
+              {k === "square" ? "Square" : k.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="blob-btn blob-btn-primary blob-print-export"
           disabled={busy}
           onClick={() => void doExport()}
         >
           Export
         </button>
+      </header>
+
+      <div
+        className="blob-print-stage-wrap"
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onClick={() => setSelectedId(null)}
+      >
+        <div ref={stageRef} className="blob-print-stage" style={stageStyle}>
+          {doc.items.map((it) => {
+            const thumb = thumbs[it.asset_id];
+            const left = `${(it.x_mm / doc.page.width_mm) * 100}%`;
+            const top = `${(it.y_mm / doc.page.height_mm) * 100}%`;
+            const width = `${(it.width_mm / doc.page.width_mm) * 100}%`;
+            const sel = it.id === selectedId;
+            return (
+              <div
+                key={it.id}
+                className={`blob-print-item${sel ? " is-selected" : ""}`}
+                style={{
+                  left,
+                  top,
+                  width,
+                  aspectRatio: "1",
+                  transform: `rotate(${it.rotation_deg}deg)`,
+                }}
+                onPointerDown={(e) => onPointerDownItem(e, it.id)}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {thumb ? <img src={thumb} alt="" draggable={false} /> : null}
+                {sel && (
+                  <button
+                    type="button"
+                    className="blob-print-resize"
+                    aria-label="Resize"
+                    onPointerDown={(e) => onPointerDownResize(e, it.id)}
+                  />
+                )}
+              </div>
+            );
+          })}
+          {doc.page.cut_marks && <div className="blob-print-cutmarks" aria-hidden />}
+        </div>
       </div>
 
-      <div className="blob-print-body">
-        <aside className="blob-print-tray">
-          <div className="blob-muted">Stickers</div>
-          <div className="blob-print-tray-grid">
-            {assets.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                className="blob-print-tray-item"
-                title={a.label ?? a.id}
-                onClick={() => addAsset(a.id)}
-              >
-                {thumbs[a.id] ? (
-                  <img src={thumbs[a.id]} alt={a.label ?? a.id} />
-                ) : (
-                  <span>{a.label ?? a.id}</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </aside>
+      <div className="blob-print-chrome">
+        <nav className="blob-tool-nav blob-print-section-nav" role="tablist" aria-label="Print tools">
+          {(Object.keys(SECTION_LABELS) as PrintSection[]).map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={section === id}
+              className={`blob-tool-nav-item${section === id ? " is-active" : ""}`}
+              onClick={() => selectSection(id)}
+            >
+              {SECTION_LABELS[id]}
+            </button>
+          ))}
+        </nav>
 
-        <div
-          className="blob-print-stage-wrap"
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
-          onClick={() => setSelectedId(null)}
-        >
-          <div ref={stageRef} className="blob-print-stage" style={stageStyle}>
-            {doc.items.map((it) => {
-              const thumb = thumbs[it.asset_id];
-              const left = `${(it.x_mm / doc.page.width_mm) * 100}%`;
-              const top = `${(it.y_mm / doc.page.height_mm) * 100}%`;
-              const width = `${(it.width_mm / doc.page.width_mm) * 100}%`;
-              const sel = it.id === selectedId;
-              return (
-                <div
-                  key={it.id}
-                  className={`blob-print-item${sel ? " is-selected" : ""}`}
-                  style={{
-                    left,
-                    top,
-                    width,
-                    aspectRatio: "1",
-                    transform: `rotate(${it.rotation_deg}deg)`,
-                  }}
-                  onPointerDown={(e) => onPointerDownItem(e, it.id)}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {thumb ? <img src={thumb} alt="" draggable={false} /> : null}
-                  {sel && (
-                    <button
-                      type="button"
-                      className="blob-print-resize"
-                      aria-label="Resize"
-                      onPointerDown={(e) => onPointerDownResize(e, it.id)}
-                    />
-                  )}
-                </div>
-              );
-            })}
-            {doc.page.cut_marks && <div className="blob-print-cutmarks" aria-hidden />}
-          </div>
-        </div>
-
-        <aside className="blob-print-inspector">
-          {selected ? (
-            <>
-              <div className="blob-muted">Selected</div>
-              <label>
-                Size (mm)
-                <input
-                  type="range"
-                  min={8}
-                  max={Math.min(doc.page.width_mm, doc.page.height_mm)}
-                  value={selected.width_mm}
-                  onChange={(e) =>
-                    setDoc((d) => resizePrintItem(d, selected.id, Number(e.target.value)))
-                  }
-                />
-              </label>
-              <label>
-                Rotate
-                <input
-                  type="range"
-                  min={-180}
-                  max={180}
-                  value={selected.rotation_deg}
-                  onChange={(e) =>
-                    setDoc((d) => rotatePrintItem(d, selected.id, Number(e.target.value)))
-                  }
-                />
-              </label>
+        {section && (
+          <div className="blob-tool-panel blob-print-panel" role="tabpanel" aria-label={SECTION_LABELS[section]}>
+            <div className="blob-tool-panel-head">
+              <span className="blob-inspector-title">{SECTION_LABELS[section]}</span>
               <button
                 type="button"
-                className="blob-btn"
-                onClick={() => {
-                  setDoc((d) => removePrintItem(d, selected.id));
-                  setSelectedId(null);
-                }}
+                className="blob-btn blob-btn-ghost blob-tool-panel-close"
+                onClick={() => setSection(null)}
+                aria-label="Collapse panel"
               >
-                Remove
+                Close
               </button>
-            </>
-          ) : (
-            <p className="blob-muted">Tap a sticker to move, resize, or rotate. Use Auto grid to pack the tray.</p>
-          )}
-        </aside>
+            </div>
+            <div className="blob-tool-panel-body blob-print-panel-body">{panelBody}</div>
+          </div>
+        )}
       </div>
     </div>
   );

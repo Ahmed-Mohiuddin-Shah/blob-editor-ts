@@ -494,59 +494,109 @@
   accent-color:var(--blob-primary,#f10ea0);
 }
 
-/* —— Print layout —— */
-.blob-print-body {
-  display: grid;
-  grid-template-columns: 7rem 1fr 10rem;
-  gap: 0.75rem;
-  min-width: 0;
-  align-items: start;
-}
-@container blob-editor (max-width: 720px) {
-  .blob-print-body {
-    grid-template-columns: 1fr;
-  }
-}
-.blob-print-tray,
-.blob-print-inspector {
+/* —— Print layout (portrait-first, no page scroll) —— */
+.blob-print-layout {
+  height: min(100dvh, 100%);
+  max-height: min(100dvh, 100%);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  min-width: 0;
+  padding: 0.5rem;
+  box-sizing: border-box;
 }
-.blob-print-tray-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem;
+
+.blob-print-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
 }
-.blob-print-tray-item {
-  aspect-ratio: 1;
-  padding: 0.2rem;
-  border: 1px solid var(--blob-btn-border, rgba(0, 0, 0, 0.12));
-  border-radius: var(--blob-radius, 0.75rem);
-  background: var(--blob-btn, rgba(0, 0, 0, 0.06));
-  cursor: pointer;
-  overflow: hidden;
+
+.blob-print-back,
+.blob-print-back-spacer {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 1.25rem;
+  line-height: 1;
 }
-.blob-print-tray-item img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-.blob-print-stage-wrap {
+
+.blob-print-presets {
+  flex: 1 1 auto;
   display: flex;
   justify-content: center;
+  gap: 0.4rem;
   min-width: 0;
-  touch-action: none;
 }
+
+.blob-print-preset {
+  appearance: none;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 9999px;
+  border: 1px solid var(--blob-btn-border, rgba(0, 0, 0, 0.12));
+  background: var(--blob-btn, rgba(0, 0, 0, 0.06));
+  color: var(--blob-fg, #111);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  padding: 0;
+}
+
+.blob-print-preset.is-active {
+  background: linear-gradient(135deg, var(--blob-primary, #f10ea0), var(--blob-secondary, #e95214));
+  color: var(--blob-on-primary, #fff);
+  border-color: transparent;
+}
+
+.blob-print-export {
+  flex: 0 0 auto;
+  min-height: 44px;
+  border-radius: var(--blob-radius, 9999px);
+  padding: 0 1rem;
+}
+
+.blob-print-stage-wrap {
+  flex: 0 0 70%;
+  max-height: 70%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  overflow: hidden;
+}
+
 .blob-print-stage {
   position: relative;
-  width: min(100%, 420px);
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: 100%;
+  aspect-ratio: var(--print-aspect, 0.707);
+  /* Contain: height-driven when tall page, width-driven when wide */
+  width: min(100%, calc(100% * var(--print-aspect, 0.707) / var(--print-aspect, 0.707)));
+  max-width: min(100%, calc(100cqi));
   border: 1px solid var(--blob-glass-border, rgba(0, 0, 0, 0.12));
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   overflow: hidden;
   user-select: none;
+  box-sizing: border-box;
+}
+/* Prefer fitting inside stage-wrap via object-fit-like constraint */
+.blob-print-stage-wrap > .blob-print-stage {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: var(--print-aspect, 0.707);
 }
 .blob-print-item {
   position: absolute;
@@ -584,38 +634,110 @@
   inset: 4.5%;
   border: 1px dashed rgba(0, 0, 0, 0.25);
 }
-.blob-print-grid-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.75rem;
-  color: var(--blob-muted, #666);
-}
-.blob-print-grid-label input {
-  width: 2.5rem;
-  min-height: 36px;
-}
-.blob-print-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.8rem;
-}
-.blob-print-inspector label {
+
+.blob-print-chrome {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--blob-muted, #666);
+  gap: 0.4rem;
+  justify-content: flex-end;
+  overflow: hidden;
 }
-.blob-print-inspector input[type="range"] {
+
+.blob-print-section-nav {
+  flex: 0 0 auto;
+}
+
+.blob-print-panel {
+  flex: 0 1 auto;
+  max-height: min(22vh, 160px);
+  overflow: hidden;
+  padding: 0.5rem 0.65rem;
+}
+
+.blob-print-panel-body {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.blob-print-hscroll {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  align-items: center;
+  padding-bottom: 0.15rem;
+}
+
+.blob-print-tray-item {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  padding: 0.2rem;
+  border: 1px solid var(--blob-btn-border, rgba(0, 0, 0, 0.12));
+  border-radius: var(--blob-radius, 0.75rem);
+  background: var(--blob-btn, rgba(0, 0, 0, 0.06));
+  cursor: pointer;
+  overflow: hidden;
+}
+.blob-print-tray-item img {
   width: 100%;
-  min-height: 44px;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.blob-print-controls-row {
+  gap: 0.65rem;
+}
+
+.blob-print-chip-control {
+  flex: 0 0 auto;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--blob-muted, #666);
+  align-items: stretch;
+}
+
+.blob-print-chip-control input[type="number"] {
+  width: 3.25rem;
+  min-height: 40px;
+  box-sizing: border-box;
+}
+
+.blob-print-range {
+  min-width: 7.5rem;
+}
+.blob-print-range input[type="range"] {
+  width: 7.5rem;
+  min-height: 40px;
   accent-color: var(--blob-primary, #f10ea0);
 }
+
+.blob-print-check {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.blob-print-panel-hint {
+  margin: 0;
+  white-space: nowrap;
+}
+
 .blob-muted {
   font-size: 0.75rem;
   color: var(--blob-muted, #666);
