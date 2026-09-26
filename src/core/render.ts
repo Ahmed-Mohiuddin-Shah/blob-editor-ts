@@ -27,11 +27,16 @@ function get2d(c: HTMLCanvasElement | OffscreenCanvas): CanvasRenderingContext2D
 }
 
 async function canvasToPngBlob(c: HTMLCanvasElement | OffscreenCanvas): Promise<Blob> {
-  if (c instanceof OffscreenCanvas) {
+  if (typeof OffscreenCanvas !== "undefined" && c instanceof OffscreenCanvas) {
     return c.convertToBlob({ type: "image/png" });
   }
+  const maybeBuf = c as unknown as { toBuffer?: (m?: string) => Buffer };
+  if (typeof maybeBuf.toBuffer === "function") {
+    const buf = maybeBuf.toBuffer("image/png");
+    return new Blob([Uint8Array.from(buf)], { type: "image/png" });
+  }
   return new Promise((resolve, reject) => {
-    c.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
+    (c as HTMLCanvasElement).toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png");
   });
 }
 

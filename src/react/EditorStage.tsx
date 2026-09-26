@@ -6,12 +6,20 @@ import { CANVAS_SIZE } from "../core/types.js";
 import { updateTransform, updateText } from "../core/ops.js";
 import { MEME_FONT_STACK } from "../core/fonts.js";
 import { mapCompToSource } from "../core/timing.js";
+import { gifFrameAt, type GifFrameCanvas } from "../core/gif.js";
 
 export type MaskToolMode = "add" | "remove" | "polygon" | null;
+
+export type GifAssetFrames = {
+  frames: GifFrameCanvas[];
+  delaysMs: number[];
+};
 
 export interface EditorStageProps {
   doc: CompositionDocument;
   images: Record<string, HTMLImageElement | HTMLVideoElement | HTMLCanvasElement>;
+  /** Decoded GIF frame lists — playhead selects via gifFrameAt. */
+  gifAssets?: Record<string, GifAssetFrames>;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   onDocumentChange: (doc: CompositionDocument) => void;
@@ -64,11 +72,12 @@ function composeStageLayer(
   return cache;
 }
 
-/** Snapshot video (or pass-through / masked image) so Konva always has a paintable bitmap. */
+/** Snapshot video / GIF frame (or pass-through / masked image) so Konva always has a paintable bitmap. */
 function useStageBitmaps(
   doc: CompositionDocument,
   images: Record<string, HTMLImageElement | HTMLVideoElement | HTMLCanvasElement>,
   tMs: number,
+  gifAssets?: Record<string, GifAssetFrames>,
 ): Record<string, HTMLImageElement | HTMLCanvasElement> {
   const [bitmaps, setBitmaps] = useState<Record<string, HTMLImageElement | HTMLCanvasElement>>({});
   const canvasCache = useRef<Record<string, HTMLCanvasElement>>({});
@@ -84,7 +93,29 @@ function useStageBitmaps(
         if (!src) continue;
 
         let base: HTMLImageElement | HTMLCanvasElement;
-        if (src instanceof HTMLVideoElement) {
+        const gif = obj.kind === "gif" ? gifAssets?.[obj.asset_id] : undefined;
+        if (gif && gif.frames.length > 0) {
+          const sourceT = obj.keep ? mapCompToSource(obj.keep, tMs) : tMs;
+          const frame = gifFrameAt(gif.frames, gif.delaysMs, sourceT ?? 0);
+          // OffscreenCanvas → HTMLCanvasElement for Konva
+          if (frame instanceof HTMLCanvasElement) {
+            base = frame;
+          } else {
+            let c = canvasCache.current[`${obj.asset_id}:gif`];
+            if (!c) {
+              c = document.createElement("canvas");
+              canvasCache.current[`${obj.asset_id}:gif`] = c;
+            }
+            const w = frame.width;
+            const h = frame.height;
+            if (c.width !== w || c.height !== h) {
+              c.width = w;
+              c.height = h;
+            }
+            c.getContext("2d")!.drawImage(frame as CanvasImageSource, 0, 0);
+            base = c;
+          }
+        } else if (src instanceof HTMLVideoElement) {
           const sourceT = obj.keep ? mapCompToSource(obj.keep, tMs) : tMs;
           if (sourceT != null) {
             const sec = sourceT / 1000;
@@ -152,7 +183,7 @@ function useStageBitmaps(
     return () => {
       cancelled = true;
     };
-  }, [doc, images, tMs]);
+  }, [doc, images, tMs, gifAssets]);
 
   return bitmaps;
 }
@@ -274,6 +305,7 @@ function canvasPos(stage: Konva.Stage | null, displayScale: number): { x: number
 export function EditorStage({
   doc,
   images,
+  gifAssets,
   selectedId,
   onSelect,
   onDocumentChange,
@@ -290,7 +322,7 @@ export function EditorStage({
   const side = Math.min(width, height);
   const scale = side / CANVAS_SIZE;
   const t = doc.duration_ms > 0 ? playheadMs : 0;
-  const bitmaps = useStageBitmaps(doc, images, t);
+  const bitmaps = useStageBitmaps(doc, images, t, gifAssets);
   const layerRef = useRef<Konva.Layer>(null);
   const painting = useRef(false);
   const [rubber, setRubber] = useState<{ x: number; y: number } | null>(null);

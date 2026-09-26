@@ -4,6 +4,12 @@ export const DOCUMENT_VERSION = 2 as const;
 export const CANVAS_SIZE = 1024 as const;
 /** Hard cap for gif/video (post-trim) duration. */
 export const MAX_DURATION_MS = 10_000 as const;
+/** Derivative / prepare budgets (bytes). */
+export const MAX_STILL_BYTES = 2 * 1024 * 1024;
+export const MAX_GIF_BYTES = 3 * 1024 * 1024;
+export const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
+/** Animated GIF encode max edge (stills/video stay at CANVAS_SIZE). */
+export const GIF_ENCODE_MAX_EDGE = 512 as const;
 export const DEFAULT_FPS_GIF = 15 as const;
 export const DEFAULT_FPS_VIDEO = 24 as const;
 

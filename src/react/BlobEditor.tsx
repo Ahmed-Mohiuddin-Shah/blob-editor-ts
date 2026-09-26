@@ -19,6 +19,7 @@ import {
   updateText,
   updateTransform,
   validateDocument,
+  decodeGifBytes,
   type Background,
   type CompositionDocument,
   type ExportPayload,
@@ -28,7 +29,7 @@ import {
 } from "../core/index.js";
 import { DEFAULT_THEME, themeStyle, resolveThemeMode, usePrefersDark, type EditorTheme, type ThemeMode } from "./theme.js";
 import { PreviewStrip } from "./PreviewStrip.js";
-import { EditorStage, type MaskToolMode } from "./EditorStage.js";
+import { EditorStage, type MaskToolMode, type GifAssetFrames } from "./EditorStage.js";
 import { TextInspector } from "./TextInspector.js";
 import { TransformInspector } from "./TransformInspector.js";
 import { Timeline } from "./Timeline.js";
@@ -112,6 +113,21 @@ function inferKind(file: File | Blob | string): MediaKind {
   if (name.includes("video") || /\.(mp4|webm|mov)(\?|$)/i.test(n)) return "video";
   if (name.includes("gif") || /\.gif(\?|$)/i.test(n)) return "gif";
   return "image";
+}
+
+async function fetchBytes(url: string): Promise<Uint8Array> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`failed to fetch: ${url}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+function canvasToHtmlImage(c: HTMLCanvasElement | OffscreenCanvas): HTMLCanvasElement {
+  if (c instanceof HTMLCanvasElement) return c;
+  const out = document.createElement("canvas");
+  out.width = c.width;
+  out.height = c.height;
+  out.getContext("2d")!.drawImage(c as CanvasImageSource, 0, 0);
+  return out;
 }
 
 function naturalDims(img: StageImage): { nw: number; nh: number } {
@@ -238,6 +254,7 @@ export function BlobEditor({
   const overlayRef = useRef<HTMLInputElement>(null);
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
   const [images, setImages] = useState<Record<string, StageImage>>({});
+  const [gifAssets, setGifAssets] = useState<Record<string, GifAssetFrames>>({});
   const imagesRef = useRef(images);
   imagesRef.current = images;
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -293,6 +310,29 @@ export function BlobEditor({
         });
         setAssetUrl(url);
         setImages({ [assetId]: v });
+        setGifAssets({});
+        history.reset(doc);
+        setPreviewDoc(doc);
+        setSelectedId(doc.objects[0]?.id ?? null);
+        setPlayheadMs(0);
+        return;
+      }
+      if (kind === "gif") {
+        const bytes = await fetchBytes(url);
+        const decoded = decodeGifBytes(bytes);
+        const first = canvasToHtmlImage(decoded.frames[0]!);
+        const doc = createFromSource(assetId, decoded.width, decoded.height, "transparent", {
+          kind: "gif",
+          durationMs: decoded.totalMs || 3000,
+          fps: decoded.delaysMs.length
+            ? Math.max(1, Math.round(1000 / (decoded.delaysMs.reduce((a, b) => a + b, 0) / decoded.delaysMs.length)))
+            : undefined,
+        });
+        setAssetUrl(url);
+        setImages({ [assetId]: first });
+        setGifAssets({
+          [assetId]: { frames: decoded.frames, delaysMs: decoded.delaysMs },
+        });
         history.reset(doc);
         setPreviewDoc(doc);
         setSelectedId(doc.objects[0]?.id ?? null);
@@ -300,13 +340,13 @@ export function BlobEditor({
         return;
       }
       const img = await loadImage(url);
-      // ponytail: web GIF = first frame still for duration scrub; real decode is host/encode
       const doc = createFromSource(assetId, img.naturalWidth, img.naturalHeight, "transparent", {
-        kind,
-        durationMs: kind === "gif" ? 3000 : 0,
+        kind: "image",
+        durationMs: 0,
       });
       setAssetUrl(url);
       setImages({ [assetId]: img });
+      setGifAssets({});
       history.reset(doc);
       setPreviewDoc(doc);
       setSelectedId(doc.objects[0]?.id ?? null);
@@ -334,6 +374,16 @@ export function BlobEditor({
             setAssetUrl(url);
             setImages({ [id]: v });
             setSelectedId(media?.id ?? null);
+          } else if (kind === "gif") {
+            const bytes = await fetchBytes(url);
+            if (cancelled) return;
+            const decoded = decodeGifBytes(bytes);
+            const media = doc.objects.find((o) => o.type === "media");
+            const id = media && media.type === "media" ? media.asset_id : `local_${Math.random().toString(36).slice(2)}`;
+            setAssetUrl(url);
+            setImages({ [id]: canvasToHtmlImage(decoded.frames[0]!) });
+            setGifAssets({ [id]: { frames: decoded.frames, delaysMs: decoded.delaysMs } });
+            setSelectedId(media?.id ?? null);
           } else {
             const img = await loadImage(url);
             if (cancelled) return;
@@ -341,6 +391,7 @@ export function BlobEditor({
             const id = media && media.type === "media" ? media.asset_id : `local_${Math.random().toString(36).slice(2)}`;
             setAssetUrl(url);
             setImages({ [id]: img });
+            setGifAssets({});
             setSelectedId(media?.id ?? null);
           }
         }
@@ -479,6 +530,29 @@ export function BlobEditor({
       if (kind === "video") return; // overlays: images + GIFs only
       const url = trackUrl(URL.createObjectURL(file));
       const assetId = newObjectId("ov");
+      if (kind === "gif") {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const decoded = decodeGifBytes(bytes);
+        const first = canvasToHtmlImage(decoded.frames[0]!);
+        setImages((prev) => ({ ...prev, [assetId]: first }));
+        setGifAssets((prev) => ({
+          ...prev,
+          [assetId]: { frames: decoded.frames, delaysMs: decoded.delaysMs },
+        }));
+        try {
+          pushAndPreview(
+            addMedia(history.present, {
+              asset_id: assetId,
+              kind: "gif",
+              naturalWidth: decoded.width,
+              naturalHeight: decoded.height,
+            }),
+          );
+        } catch {
+          /* invalid overlay */
+        }
+        return;
+      }
       const img = await loadImage(url);
       setImages((prev) => ({ ...prev, [assetId]: img }));
       try {
@@ -705,6 +779,7 @@ export function BlobEditor({
                 <EditorStage
                   doc={history.present}
                   images={images}
+                  gifAssets={gifAssets}
                   selectedId={selectedId}
                   onSelect={setSelectedId}
                   onDocumentChange={history.push}

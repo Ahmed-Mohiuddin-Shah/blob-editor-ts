@@ -6,10 +6,11 @@ Companion Flutter package: [`blob_editor`](https://pub.dev/packages/blob_editor)
 
 | Entry | Use |
 |-------|-----|
-| `blob-editor` / `blob-editor/core` | Document ops, validate, render (no React) |
+| `blob-editor` / `blob-editor/core` | Document ops, validate, render, `prepareSourceMedia` (no React) |
 | `blob-editor/react` | `BlobEditor`, `PrintLayout` + CSS |
 | `blob-editor/print` | Print document helpers (`pageA4`, `layoutGrid`, …) |
 | `blob-editor/encode` | **Node only** — gif/mp4/PDF encode |
+| `blob-editor/prepare` | Browser upload compress (`prepareSourceMedia`) |
 
 ## Install
 
@@ -17,6 +18,7 @@ Companion Flutter package: [`blob_editor`](https://pub.dev/packages/blob_editor)
 npm install blob-editor
 # peer: react, react-dom >= 18
 # worker optional: gifenc, ffmpeg-static, pdf-lib
+# gif/video encode also needs bytesResolver + omggif (bundled)
 ```
 
 ## Drop-in usage
@@ -102,7 +104,29 @@ import { encodeComposition, encodePrint } from "blob-editor/encode";
 
 const payload = await encodeComposition(doc, frameResolver, bytesResolver);
 // payload.exports: chat, thumbnail, full, mask?, gif?, video?
+// Budgets: stills ≤2MB, gif ≤3MB, video ≤12MB and ≤10s
+// gif also emitted for video compositions (composed silent preview)
+```
 
+### Prepare before upload (browser)
+
+```ts
+import { prepareSourceMedia } from "blob-editor/prepare";
+// or: import { prepareSourceMedia } from "blob-editor/core";
+
+const { file, kind, width, height, durationMs } = await prepareSourceMedia(pickedFile, {
+  onProgress: ({ phase, ratio }) => {
+    // BusyButton: phase decode | compress | done, ratio 0–1
+  },
+});
+// file is under the same caps as encode derivatives
+```
+
+**Breaking (0.2):** animated gif/video encode requires a working `bytesResolver` that returns original file bytes. `frameResolver` alone is not enough in Node (no `HTMLVideoElement`). Optional worker deps: `gifenc`, `ffmpeg-static`. Runtime dep `omggif` decodes GIF frames for encode + browser scrub.
+
+When `audio.mute_source === false`, composed mp4 keeps trimmed source audio. No replacement soundtrack mux.
+
+```ts
 const sheet = await encodePrint(printDoc, bytesResolver, { formats: ["png", "pdf"] });
 // sheet.exports.png — raster; sheet.exports.pdf — embedded source PNGs
 
