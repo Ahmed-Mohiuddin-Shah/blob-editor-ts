@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0
+
+### Fixes
+
+- **Video preview audio:** Timeline play drives `HTMLVideoElement.play()` and syncs mute from `audio.mute_source` (was always muted + seek-only, so unmuting had no effect).
+- **Smooth video play:** Skip seek-per-frame while playing; scrub still seeks when paused.
+
+### Features
+
+- **Video Settings** tool pill with `VideoSettingsInspector` (mute / remove original sound).
+- **Remove** selected text or overlay (button + Delete/Backspace); primary media cannot be removed.
+- **`maxDurationMs`** optional override (default 10 000) on `BlobEditor`, `createFromSource` / `syncDurationFromPrimary` / `setDuration`, `validateDocument`, `prepareSourceMedia`, and `encodeComposition`.
+- New videos default to **`mute_source: false`** (sound on).
+
 ## 0.2.1
 
 ### Fixes

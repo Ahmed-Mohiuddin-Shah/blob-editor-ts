@@ -27,6 +27,8 @@ export interface EditorStageProps {
   width: number;
   height: number;
   playheadMs?: number;
+  /** When true, video elements free-run — skip seek-per-frame. */
+  playing?: boolean;
   /** Brush add/remove or polygon point capture — disables drag. */
   maskMode?: MaskToolMode;
   /** Canvas-space brush radius for paint + cursor preview. */
@@ -78,6 +80,7 @@ function useStageBitmaps(
   images: Record<string, HTMLImageElement | HTMLVideoElement | HTMLCanvasElement>,
   tMs: number,
   gifAssets?: Record<string, GifAssetFrames>,
+  playing = false,
 ): Record<string, HTMLImageElement | HTMLCanvasElement> {
   const [bitmaps, setBitmaps] = useState<Record<string, HTMLImageElement | HTMLCanvasElement>>({});
   const canvasCache = useRef<Record<string, HTMLCanvasElement>>({});
@@ -117,7 +120,8 @@ function useStageBitmaps(
           }
         } else if (src instanceof HTMLVideoElement) {
           const sourceT = obj.keep ? mapCompToSource(obj.keep, tMs) : tMs;
-          if (sourceT != null) {
+          // While playing, video clock advances — draw without seeking (smooth + audio).
+          if (!playing && sourceT != null) {
             const sec = sourceT / 1000;
             if (Math.abs(src.currentTime - sec) > 0.04) {
               await new Promise<void>((res) => {
@@ -183,7 +187,7 @@ function useStageBitmaps(
     return () => {
       cancelled = true;
     };
-  }, [doc, images, tMs, gifAssets]);
+  }, [doc, images, tMs, gifAssets, playing]);
 
   return bitmaps;
 }
@@ -313,6 +317,7 @@ export function EditorStage({
   width,
   height,
   playheadMs = 0,
+  playing = false,
   maskMode = null,
   brushSize = 28,
   onBrushPaint,
@@ -322,7 +327,7 @@ export function EditorStage({
   const side = Math.min(width, height);
   const scale = side / CANVAS_SIZE;
   const t = doc.duration_ms > 0 ? playheadMs : 0;
-  const bitmaps = useStageBitmaps(doc, images, t, gifAssets);
+  const bitmaps = useStageBitmaps(doc, images, t, gifAssets, playing);
   const layerRef = useRef<Konva.Layer>(null);
   const painting = useRef(false);
   const [rubber, setRubber] = useState<{ x: number; y: number } | null>(null);

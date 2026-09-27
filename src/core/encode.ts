@@ -16,6 +16,7 @@ import {
   CANVAS_SIZE,
   MAX_STILL_BYTES,
   MAX_VIDEO_BYTES,
+  resolveMaxDurationMs,
   type AssetBytesResolver,
   type AssetResolver,
   type CompositionDocument,
@@ -449,12 +450,19 @@ async function muxAudio(
  * GIF/video frames come from `bytesResolver` (not host-decoded frameResolver).
  * When mute_source is false, muxes trimmed source audio onto the composed mp4.
  * Enforces still ≤2MB, GIF ≤3MB, video ≤12MB.
+ * Pass `opts.maxDurationMs` when the composition exceeds the default 10s cap.
  */
 export async function encodeComposition(
   doc: CompositionDocument,
   frameResolver: AssetResolver,
   bytesResolver?: AssetBytesResolver,
+  opts?: { maxDurationMs?: number },
 ): Promise<EncodePayload> {
+  const maxMs = resolveMaxDurationMs(opts?.maxDurationMs);
+  if (doc.duration_ms > maxMs) {
+    throw new Error(`duration_ms exceeds ${maxMs}`);
+  }
+
   const animatedNeeded = needsGifExport(doc);
   if (animatedNeeded && !bytesResolver) {
     throw new Error("encodeComposition requires bytesResolver for gif/video compositions");

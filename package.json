@@ -1,6 +1,6 @@
 {
   "name": "blob-editor",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "BLOB Composition editor — portable core + React drop-in UI",
   "type": "module",
   "main": "./dist/core/index.js",

@@ -1,4 +1,4 @@
-export type ToolId = "transform" | "crop" | "cutout" | "text" | "canvas";
+export type ToolId = "transform" | "crop" | "cutout" | "text" | "canvas" | "video";
 
 export interface ToolNavItem {
   id: ToolId;

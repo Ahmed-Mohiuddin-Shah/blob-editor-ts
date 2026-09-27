@@ -3,7 +3,7 @@
  */
 
 import { GifReader } from "omggif";
-import { MAX_DURATION_MS } from "./types.js";
+import { resolveMaxDurationMs } from "./types.js";
 
 export type GifFrameCanvas = HTMLCanvasElement | OffscreenCanvas;
 
@@ -39,7 +39,8 @@ function canvasFromRgba(w: number, h: number, rgba: Uint8ClampedArray): GifFrame
  * Decode animated GIF bytes into full composited frames + delays.
  * Disposal handled via scratch buffer (omggif blit).
  */
-export function decodeGifBytes(bytes: Uint8Array): DecodedGif {
+export function decodeGifBytes(bytes: Uint8Array, maxDurationMs?: number): DecodedGif {
+  const maxMs = resolveMaxDurationMs(maxDurationMs);
   const reader = new GifReader(bytes);
   const w = reader.width;
   const h = reader.height;
@@ -74,7 +75,7 @@ export function decodeGifBytes(bytes: Uint8Array): DecodedGif {
   }
 
   const rawTotal = delaysMs.reduce((a, b) => a + b, 0);
-  const totalMs = Math.min(MAX_DURATION_MS, Math.max(0, rawTotal));
+  const totalMs = Math.min(maxMs, Math.max(0, rawTotal));
 
   return { frames, delaysMs, totalMs, width: w, height: h };
 }

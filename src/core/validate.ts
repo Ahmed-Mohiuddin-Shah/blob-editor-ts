@@ -1,7 +1,7 @@
 import {
   CANVAS_SIZE,
   DOCUMENT_VERSION,
-  MAX_DURATION_MS,
+  resolveMaxDurationMs,
   type AudioTrack,
   type Background,
   type CompositionDocument,
@@ -191,11 +191,15 @@ function validateAudio(raw: unknown): AudioTrack | null {
  * Parse + validate unknown JSON into a CompositionDocument.
  * Auto-migrates v1 → v2 and strips removed fields.
  */
-export function validateDocument(raw: unknown): CompositionDocument {
+export function validateDocument(
+  raw: unknown,
+  opts?: { maxDurationMs?: number },
+): CompositionDocument {
   if (!raw || typeof raw !== "object") {
     throw new DocumentValidationError("document must be an object");
   }
   const d = raw as Record<string, unknown>;
+  const maxMs = resolveMaxDurationMs(opts?.maxDurationMs);
 
   const canvasRaw = d.canvas as Record<string, unknown> | undefined;
   if (!canvasRaw || canvasRaw.width !== CANVAS_SIZE || canvasRaw.height !== CANVAS_SIZE) {
@@ -221,8 +225,8 @@ export function validateDocument(raw: unknown): CompositionDocument {
   if (typeof normalized.duration_ms !== "number" || normalized.duration_ms < 0) {
     throw new DocumentValidationError("duration_ms invalid");
   }
-  if (normalized.duration_ms > MAX_DURATION_MS) {
-    throw new DocumentValidationError(`duration_ms exceeds ${MAX_DURATION_MS}`);
+  if (normalized.duration_ms > maxMs) {
+    throw new DocumentValidationError(`duration_ms exceeds ${maxMs}`);
   }
   if (typeof normalized.fps !== "number" || normalized.fps <= 0) {
     throw new DocumentValidationError("fps invalid");

@@ -54,10 +54,26 @@ import "blob-editor/react/blob-editor.css";
 | `primary` / `onPrimary` / `secondary` / `onSecondary` | Theme colors |
 | `blocky` | `true` = sharp chrome; `false` = soft radii |
 | `themeMode` | `"light"` \| `"dark"` \| `"system"` (default) |
+| `maxDurationMs?` | Override default **10 000** ms gif/video duration cap for create/trim/validate. |
 | `onExport` | `{ document, exports: { chat, thumbnail, full }, mask?, meta? }` |
 | `onCancel?` | Dismiss without export |
 
-Kind-gated UI (image ⊃ gif ⊃ video): crop/scale/rotate/text/undo; BG + multi for image/gif; **brush + polygon mask + outline** for image; trim for gif/video; mute for video.
+Kind-gated UI (image ⊃ gif ⊃ video): crop/scale/rotate/text/undo; BG + multi for image/gif; **brush + polygon mask + outline** for image; trim for gif/video; **Video Settings** pill (mute) for video; Remove (+ Delete) for selected text/overlays.
+
+### Longer (or shorter) duration cap
+
+```tsx
+<BlobEditor
+  maxDurationMs={15_000} // optional; default 10_000
+  onExport={({ document, exports }) => { /* ... */ }}
+/>
+
+// Match prepare + encode when you raise the cap:
+await prepareSourceMedia(file, { maxDurationMs: 15_000, onProgress });
+await encodeComposition(doc, frameResolver, bytesResolver, { maxDurationMs: 15_000 });
+```
+
+Pass the **same** `maxDurationMs` to `validateDocument(doc, { maxDurationMs })` when loading remixed docs over 10s.
 
 ### Cutout (images)
 
@@ -73,7 +89,7 @@ Stage composites the same mask as export previews (`destination-in`). No in-pack
 
 Chrome: **header** (Cancel / Undo / Redo / Export) + **tool categories** with a **collapsible submenu**.
 
-Categories (kind / selection gated): Transform · Crop · Cutout · Text · Canvas.
+Categories (kind / selection gated): Transform · Crop · Cutout · Text · Canvas · Video Settings.
 
 - **Narrow** (&lt;720px): previews → stage → timeline (if animated) → submenu panel → bottom category nav.
 - **Wide** (≥720px): tool nav + panel left \| stage + timeline center \| previews right.
@@ -102,9 +118,11 @@ import {
 ```ts
 import { encodeComposition, encodePrint } from "blob-editor/encode";
 
-const payload = await encodeComposition(doc, frameResolver, bytesResolver);
+const payload = await encodeComposition(doc, frameResolver, bytesResolver, {
+  maxDurationMs: 15_000, // optional; required if duration_ms > 10_000
+});
 // payload.exports: chat, thumbnail, full, mask?, gif?, video?
-// Budgets: stills ≤2MB, gif ≤3MB, video ≤12MB and ≤10s
+// Budgets: stills ≤2MB, gif ≤3MB, video ≤12MB; duration ≤ maxDurationMs (default 10s)
 // gif also emitted for video compositions (composed silent preview)
 ```
 
@@ -115,6 +133,7 @@ import { prepareSourceMedia } from "blob-editor/prepare";
 // or: import { prepareSourceMedia } from "blob-editor/core";
 
 const { file, kind, width, height, durationMs } = await prepareSourceMedia(pickedFile, {
+  maxDurationMs: 15_000, // optional; default 10_000
   onProgress: ({ phase, ratio }) => {
     // BusyButton: phase decode | compress | done, ratio 0–1
   },
@@ -124,7 +143,7 @@ const { file, kind, width, height, durationMs } = await prepareSourceMedia(picke
 
 **Breaking (0.2):** animated gif/video encode requires a working `bytesResolver` that returns original file bytes. `frameResolver` alone is not enough in Node (no `HTMLVideoElement`). Optional worker deps: `gifenc`, `ffmpeg-static`. Runtime dep `omggif` decodes GIF frames for encode + browser scrub.
 
-When `audio.mute_source === false`, composed mp4 keeps trimmed source audio. No replacement soundtrack mux.
+When `audio.mute_source === false`, composed mp4 keeps trimmed source audio. No replacement soundtrack mux. New videos default to unmuted.
 
 ```ts
 const sheet = await encodePrint(printDoc, bytesResolver, { formats: ["png", "pdf"] });

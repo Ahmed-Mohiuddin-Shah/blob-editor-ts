@@ -185,12 +185,21 @@ describe("ops", () => {
     });
     expect(doc.duration_ms).toBe(5000);
     expect(doc.canvas.background).toBe("#000000");
-    expect(doc.audio?.mute_source).toBe(true);
+    expect(doc.audio?.mute_source).toBe(false);
     const m = doc.objects[0];
     if (m.type === "media") {
       expect(m.kind).toBe("video");
       expect(m.keep).toEqual({ start_ms: 0, end_ms: 5000 });
     }
+  });
+
+  it("createFromSource respects maxDurationMs override", () => {
+    const doc = createFromSource("v1", 100, 100, "#000000", {
+      kind: "video",
+      durationMs: 20_000,
+      maxDurationMs: 15_000,
+    });
+    expect(doc.duration_ms).toBe(15_000);
   });
 
   it("updateTransform / setBackground / addText / applyMask / outline", () => {

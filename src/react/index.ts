@@ -10,6 +10,8 @@ export {
 } from "./theme.js";
 export { TextInspector, type TextInspectorProps } from "./TextInspector.js";
 export { TransformInspector, type TransformInspectorProps } from "./TransformInspector.js";
+export { VideoSettingsInspector, type VideoSettingsInspectorProps } from "./VideoSettingsInspector.js";
+export { AudioInspector, type AudioInspectorProps } from "./AudioInspector.js";
 export { EditorHeader, type EditorHeaderProps } from "./EditorHeader.js";
 export { ToolNav, type ToolNavProps, type ToolId } from "./ToolNav.js";
 export { ToolPanel, type ToolPanelProps } from "./ToolPanel.js";

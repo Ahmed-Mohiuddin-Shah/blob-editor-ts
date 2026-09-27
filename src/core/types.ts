@@ -4,6 +4,11 @@ export const DOCUMENT_VERSION = 2 as const;
 export const CANVAS_SIZE = 1024 as const;
 /** Hard cap for gif/video (post-trim) duration. */
 export const MAX_DURATION_MS = 10_000 as const;
+
+/** Resolve host override; non-positive / missing → MAX_DURATION_MS. */
+export function resolveMaxDurationMs(override?: number): number {
+  return typeof override === "number" && override > 0 ? override : MAX_DURATION_MS;
+}
 /** Derivative / prepare budgets (bytes). */
 export const MAX_STILL_BYTES = 2 * 1024 * 1024;
 export const MAX_GIF_BYTES = 3 * 1024 * 1024;

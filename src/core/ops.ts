@@ -3,7 +3,7 @@ import {
   DEFAULT_FPS_GIF,
   DEFAULT_FPS_VIDEO,
   DOCUMENT_VERSION,
-  MAX_DURATION_MS,
+  resolveMaxDurationMs,
   type AudioTrack,
   type Background,
   type CompositionDocument,
@@ -40,14 +40,15 @@ export function createFromSource(
   naturalWidth: number,
   naturalHeight: number,
   background: Background = "transparent",
-  opts?: { kind?: MediaKind; durationMs?: number; fps?: number },
+  opts?: { kind?: MediaKind; durationMs?: number; fps?: number; maxDurationMs?: number },
 ): CompositionDocument {
   const kind = opts?.kind ?? "image";
+  const maxMs = resolveMaxDurationMs(opts?.maxDurationMs);
   const bg: Background =
     kind === "video" && background === "transparent" ? "#000000" : background;
   const scale = Math.min(CANVAS_SIZE / naturalWidth, CANVAS_SIZE / naturalHeight);
   const duration_ms = Math.min(
-    MAX_DURATION_MS,
+    maxMs,
     kind === "image" ? 0 : Math.max(0, opts?.durationMs ?? 0),
   );
   const keep: TimeRange | null =
@@ -75,7 +76,7 @@ export function createFromSource(
     objects: [media],
     duration_ms,
     fps: opts?.fps ?? (kind === "video" ? DEFAULT_FPS_VIDEO : DEFAULT_FPS_GIF),
-    audio: kind === "video" ? { mute_source: true } : null,
+    audio: kind === "video" ? { mute_source: false } : null,
   };
 }
 
@@ -164,13 +165,17 @@ export function setKeep(doc: CompositionDocument, id: string, keep: TimeRange | 
   });
 }
 
-/** Recompute duration_ms from primary media keep. Caps at MAX_DURATION_MS. */
-export function syncDurationFromPrimary(doc: CompositionDocument): CompositionDocument {
+/** Recompute duration_ms from primary media keep. Caps at maxDurationMs (default MAX_DURATION_MS). */
+export function syncDurationFromPrimary(
+  doc: CompositionDocument,
+  maxDurationMs?: number,
+): CompositionDocument {
+  const maxMs = resolveMaxDurationMs(maxDurationMs);
   const primary = doc.objects.find((o): o is MediaObject => o.type === "media");
   if (!primary) return { ...doc, duration_ms: 0 };
   if (primary.kind === "image" && !primary.keep) return { ...doc, duration_ms: 0 };
   const ms = primary.keep ? keepDurationMs(primary.keep) : doc.duration_ms;
-  return { ...doc, duration_ms: Math.min(MAX_DURATION_MS, ms) };
+  return { ...doc, duration_ms: Math.min(maxMs, ms) };
 }
 
 export function setAudio(doc: CompositionDocument, audio: AudioTrack | null): CompositionDocument {
@@ -275,8 +280,13 @@ export function findObject(doc: CompositionDocument, id: string) {
   return doc.objects.find((o) => o.id === id);
 }
 
-export function setDuration(doc: CompositionDocument, durationMs: number): CompositionDocument {
-  return { ...doc, duration_ms: Math.min(MAX_DURATION_MS, Math.max(0, durationMs)) };
+export function setDuration(
+  doc: CompositionDocument,
+  durationMs: number,
+  maxDurationMs?: number,
+): CompositionDocument {
+  const maxMs = resolveMaxDurationMs(maxDurationMs);
+  return { ...doc, duration_ms: Math.min(maxMs, Math.max(0, durationMs)) };
 }
 
 export function setFps(doc: CompositionDocument, fps: number): CompositionDocument {

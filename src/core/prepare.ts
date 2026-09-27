@@ -6,10 +6,10 @@
 import { decodeGifBytes } from "./gif.js";
 import { encodeGifUnderBudget, type RgbaFrame } from "./gif-encode.js";
 import {
-  MAX_DURATION_MS,
   MAX_GIF_BYTES,
   MAX_STILL_BYTES,
   MAX_VIDEO_BYTES,
+  resolveMaxDurationMs,
   type MediaKind,
 } from "./types.js";
 
@@ -31,6 +31,8 @@ export type PrepareSourceResult = {
 
 export type PrepareSourceOpts = {
   onProgress?: (p: PrepareProgress) => void;
+  /** Override default 10s gif/video duration cap. */
+  maxDurationMs?: number;
 };
 
 function progress(opts: PrepareSourceOpts | undefined, phase: PrepareProgressPhase, ratio: number) {
@@ -216,9 +218,10 @@ async function prepareImage(file: File, opts?: PrepareSourceOpts): Promise<Prepa
 }
 
 async function prepareGif(file: File, opts?: PrepareSourceOpts): Promise<PrepareSourceResult> {
+  const maxMs = resolveMaxDurationMs(opts?.maxDurationMs);
   progress(opts, "decode", 0.1);
   const bytes = await readFileBytes(file);
-  const decoded = decodeGifBytes(bytes);
+  const decoded = decodeGifBytes(bytes, maxMs);
   progress(opts, "decode", 0.5);
 
   let total = 0;
@@ -226,7 +229,7 @@ async function prepareGif(file: File, opts?: PrepareSourceOpts): Promise<Prepare
   const delays: number[] = [];
   for (let i = 0; i < decoded.frames.length; i++) {
     const d = decoded.delaysMs[i] ?? 100;
-    if (total + d > MAX_DURATION_MS && frames.length > 0) break;
+    if (total + d > maxMs && frames.length > 0) break;
     const canvas = decoded.frames[i]!;
     const ctx = canvas.getContext("2d", { willReadFrequently: true }) as
       | CanvasRenderingContext2D
@@ -242,7 +245,7 @@ async function prepareGif(file: File, opts?: PrepareSourceOpts): Promise<Prepare
   const avgDelay = delays.reduce((a, b) => a + b, 0) / Math.max(1, delays.length);
   const delayCs = Math.max(1, Math.round(avgDelay / 10));
 
-  if (file.size <= MAX_GIF_BYTES && total <= MAX_DURATION_MS && frames.length === decoded.frames.length) {
+  if (file.size <= MAX_GIF_BYTES && total <= maxMs && frames.length === decoded.frames.length) {
     progress(opts, "compress", 0.9);
     progress(opts, "done", 1);
     return {
@@ -250,7 +253,7 @@ async function prepareGif(file: File, opts?: PrepareSourceOpts): Promise<Prepare
       kind: "gif",
       width: decoded.width,
       height: decoded.height,
-      durationMs: Math.min(MAX_DURATION_MS, decoded.totalMs),
+      durationMs: Math.min(maxMs, decoded.totalMs),
     };
   }
 
@@ -268,7 +271,7 @@ async function prepareGif(file: File, opts?: PrepareSourceOpts): Promise<Prepare
     kind: "gif",
     width: frames[0]?.width ?? decoded.width,
     height: frames[0]?.height ?? decoded.height,
-    durationMs: Math.min(MAX_DURATION_MS, total),
+    durationMs: Math.min(maxMs, total),
   };
 }
 
@@ -322,6 +325,7 @@ async function recordTrimmedVideo(
 }
 
 async function prepareVideo(file: File, opts?: PrepareSourceOpts): Promise<PrepareSourceResult> {
+  const maxMs = resolveMaxDurationMs(opts?.maxDurationMs);
   progress(opts, "decode", 0.1);
   const url = URL.createObjectURL(file);
   try {
@@ -336,7 +340,7 @@ async function prepareVideo(file: File, opts?: PrepareSourceOpts): Promise<Prepa
     progress(opts, "decode", 0.4);
 
     const durationMs = Math.round((video.duration || 0) * 1000);
-    const needsTrim = durationMs > MAX_DURATION_MS;
+    const needsTrim = durationMs > maxMs;
     const underSize = file.size <= MAX_VIDEO_BYTES;
 
     if (!needsTrim && underSize) {
@@ -347,7 +351,7 @@ async function prepareVideo(file: File, opts?: PrepareSourceOpts): Promise<Prepa
         kind: "video",
         width: video.videoWidth,
         height: video.videoHeight,
-        durationMs: Math.min(MAX_DURATION_MS, durationMs),
+        durationMs: Math.min(maxMs, durationMs),
       };
     }
 
@@ -359,7 +363,7 @@ async function prepareVideo(file: File, opts?: PrepareSourceOpts): Promise<Prepa
     let last: { blob: Blob; mime: string; width: number; height: number } | null = null;
     for (let i = 0; i < bitrates.length; i++) {
       progress(opts, "compress", 0.3 + (i / bitrates.length) * 0.5);
-      last = await recordTrimmedVideo(video, MAX_DURATION_MS, bitrates[i]!);
+      last = await recordTrimmedVideo(video, maxMs, bitrates[i]!);
       if (last.blob.size <= MAX_VIDEO_BYTES) break;
     }
     if (!last || last.blob.size > MAX_VIDEO_BYTES) {
@@ -374,7 +378,7 @@ async function prepareVideo(file: File, opts?: PrepareSourceOpts): Promise<Prepa
       kind: "video",
       width: last.width,
       height: last.height,
-      durationMs: Math.min(MAX_DURATION_MS, durationMs),
+      durationMs: Math.min(maxMs, durationMs),
     };
   } finally {
     URL.revokeObjectURL(url);
@@ -383,7 +387,7 @@ async function prepareVideo(file: File, opts?: PrepareSourceOpts): Promise<Prepa
 
 /**
  * Compress source media under sticker budgets before host upload.
- * Image ≤2MB, GIF ≤3MB + ≤10s, video ≤12MB + ≤10s.
+ * Image ≤2MB, GIF ≤3MB + ≤maxDurationMs (default 10s), video ≤12MB + ≤maxDurationMs.
  */
 export async function prepareSourceMedia(
   file: File,

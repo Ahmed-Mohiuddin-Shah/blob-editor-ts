@@ -7,9 +7,12 @@ import {
   applyMask,
   createFromSource,
   findObject,
+  mapCompToSource,
   newObjectId,
+  removeObject,
   renderExports,
   renderMaskBlob,
+  resolveMaxDurationMs,
   setBackground,
   setMuteSource,
   setOutline,
@@ -35,7 +38,7 @@ import { TransformInspector } from "./TransformInspector.js";
 import { Timeline } from "./Timeline.js";
 import { CropInspector } from "./CropInspector.js";
 import { CutoutInspector } from "./CutoutInspector.js";
-import { AudioInspector } from "./AudioInspector.js";
+import { VideoSettingsInspector } from "./VideoSettingsInspector.js";
 import { EditorHeader } from "./EditorHeader.js";
 import { ToolNav, type ToolId } from "./ToolNav.js";
 import { ToolPanel } from "./ToolPanel.js";
@@ -47,6 +50,7 @@ const TOOL_TITLES: Record<ToolId, string> = {
   cutout: "Cutout",
   text: "Text",
   canvas: "Canvas",
+  video: "Video Settings",
 };
 
 export type StageImage = HTMLImageElement | HTMLVideoElement | HTMLCanvasElement;
@@ -60,6 +64,8 @@ export interface BlobEditorProps {
   onSecondary?: string;
   blocky?: boolean;
   themeMode?: ThemeMode;
+  /** Override default 10s gif/video duration cap (ms). */
+  maxDurationMs?: number;
   onExport: (payload: ExportPayload) => void;
   onCancel?: () => void;
 }
@@ -247,9 +253,11 @@ export function BlobEditor({
   onSecondary = DEFAULT_THEME.onSecondary,
   blocky = DEFAULT_THEME.blocky,
   themeMode = DEFAULT_THEME.themeMode,
+  maxDurationMs,
   onExport,
   onCancel,
 }: BlobEditorProps) {
+  const maxMs = resolveMaxDurationMs(maxDurationMs);
   const fileRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLInputElement>(null);
   const [assetUrl, setAssetUrl] = useState<string | null>(null);
@@ -264,6 +272,8 @@ export function BlobEditor({
   const [activePreview, setActivePreview] = useState<keyof typeof EXPORT_SIZES>("thumbnail");
   const [stageSize, setStageSize] = useState(320);
   const [playheadMs, setPlayheadMs] = useState(0);
+  const playheadRef = useRef(0);
+  playheadRef.current = playheadMs;
   const [playing, setPlaying] = useState(false);
   const [maskMode, setMaskMode] = useState<MaskToolMode>(null);
   const [brushSize, setBrushSize] = useState(28);
@@ -306,8 +316,10 @@ export function BlobEditor({
         const durationMs = Number.isFinite(v.duration) ? Math.round(v.duration * 1000) : 3000;
         const doc = createFromSource(assetId, v.videoWidth || 1024, v.videoHeight || 1024, "#000000", {
           kind: "video",
-          durationMs: Math.min(10_000, durationMs),
+          durationMs: Math.min(maxMs, durationMs),
+          maxDurationMs: maxMs,
         });
+        v.muted = doc.audio?.mute_source ?? false;
         setAssetUrl(url);
         setImages({ [assetId]: v });
         setGifAssets({});
@@ -319,11 +331,12 @@ export function BlobEditor({
       }
       if (kind === "gif") {
         const bytes = await fetchBytes(url);
-        const decoded = decodeGifBytes(bytes);
+        const decoded = decodeGifBytes(bytes, maxMs);
         const first = canvasToHtmlImage(decoded.frames[0]!);
         const doc = createFromSource(assetId, decoded.width, decoded.height, "transparent", {
           kind: "gif",
           durationMs: decoded.totalMs || 3000,
+          maxDurationMs: maxMs,
           fps: decoded.delaysMs.length
             ? Math.max(1, Math.round(1000 / (decoded.delaysMs.reduce((a, b) => a + b, 0) / decoded.delaysMs.length)))
             : undefined,
@@ -343,6 +356,7 @@ export function BlobEditor({
       const doc = createFromSource(assetId, img.naturalWidth, img.naturalHeight, "transparent", {
         kind: "image",
         durationMs: 0,
+        maxDurationMs: maxMs,
       });
       setAssetUrl(url);
       setImages({ [assetId]: img });
@@ -352,14 +366,14 @@ export function BlobEditor({
       setSelectedId(doc.objects[0]?.id ?? null);
       setPlayheadMs(0);
     },
-    [history],
+    [history, maxMs],
   );
 
   useEffect(() => {
     let cancelled = false;
     async function boot() {
       if (initialDocument) {
-        const doc = validateDocument(initialDocument);
+        const doc = validateDocument(initialDocument, { maxDurationMs: maxMs });
         history.reset(doc);
         setPreviewDoc(doc);
         if (sourceAsset) {
@@ -371,13 +385,14 @@ export function BlobEditor({
             if (cancelled) return;
             const media = doc.objects.find((o) => o.type === "media");
             const id = media && media.type === "media" ? media.asset_id : `local_${Math.random().toString(36).slice(2)}`;
+            v.muted = doc.audio?.mute_source ?? false;
             setAssetUrl(url);
             setImages({ [id]: v });
             setSelectedId(media?.id ?? null);
           } else if (kind === "gif") {
             const bytes = await fetchBytes(url);
             if (cancelled) return;
-            const decoded = decodeGifBytes(bytes);
+            const decoded = decodeGifBytes(bytes, maxMs);
             const media = doc.objects.find((o) => o.type === "media");
             const id = media && media.type === "media" ? media.asset_id : `local_${Math.random().toString(36).slice(2)}`;
             setAssetUrl(url);
@@ -447,6 +462,44 @@ export function BlobEditor({
 
   useEffect(() => {
     if (!playing || !history.present || history.present.duration_ms <= 0) return;
+
+    const primary = history.present.objects.find((o): o is MediaObject => o.type === "media");
+    const el = primary ? imagesRef.current[primary.asset_id] : undefined;
+    const video = el instanceof HTMLVideoElement ? el : null;
+
+    if (video && primary?.kind === "video") {
+      const keep = primary.keep;
+      const mute = history.present.audio?.mute_source ?? false;
+      video.muted = mute;
+      const sourceT = keep ? mapCompToSource(keep, playheadRef.current) : playheadRef.current;
+      if (sourceT != null && Math.abs(video.currentTime - sourceT / 1000) > 0.05) {
+        video.currentTime = sourceT / 1000;
+      }
+      void video.play().catch(() => {
+        /* autoplay / unmute may require gesture — play button is a gesture */
+      });
+
+      let raf = 0;
+      const tick = () => {
+        const dur = history.presentRef.current?.duration_ms ?? 0;
+        const keepStart = keep?.start_ms ?? 0;
+        const next = Math.max(0, video.currentTime * 1000 - keepStart);
+        if (next >= dur || video.ended) {
+          setPlaying(false);
+          video.pause();
+          setPlayheadMs(0);
+          return;
+        }
+        setPlayheadMs(next);
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      return () => {
+        cancelAnimationFrame(raf);
+        video.pause();
+      };
+    }
+
     let raf = 0;
     let last = performance.now();
     const tick = (now: number) => {
@@ -465,6 +518,15 @@ export function BlobEditor({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [playing, history.present, history.presentRef]);
+
+  // Keep muted flag in sync when mute_source toggles (including while paused).
+  useEffect(() => {
+    const primary = history.present?.objects.find((o): o is MediaObject => o.type === "media");
+    if (!primary || primary.kind !== "video") return;
+    const el = images[primary.asset_id];
+    if (!(el instanceof HTMLVideoElement)) return;
+    el.muted = history.present?.audio?.mute_source ?? false;
+  }, [history.present?.audio?.mute_source, history.present, images]);
 
   useEffect(() => {
     if (maskMode !== "polygon") return;
@@ -692,8 +754,22 @@ export function BlobEditor({
     crop: !!selMedia,
     cutout: selMedia?.kind === "image",
     text: true,
-    canvas: showBackground || hasVideo,
+    canvas: showBackground,
+    video: hasVideo,
   };
+
+  const canRemoveSel =
+    !!sel &&
+    (sel.type === "text" || (sel.type === "media" && sel.id !== primaryMedia?.id));
+
+  const removeSelected = useCallback(() => {
+    if (!history.present || !selectedId) return;
+    const obj = findObject(history.present, selectedId);
+    if (!obj) return;
+    if (obj.type === "media" && obj.id === primaryMedia?.id) return;
+    pushAndPreview(removeObject(history.present, selectedId));
+    setSelectedId(null);
+  }, [history.present, selectedId, primaryMedia?.id, pushAndPreview]);
 
   // Keep active tool valid when selection/kind changes; default to first available.
   useEffect(() => {
@@ -706,10 +782,25 @@ export function BlobEditor({
           : toolsAvailable.transform
             ? "transform"
             : "text"
-      : "text";
+      : hasVideo
+        ? "video"
+        : "text";
     setActiveTool(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selMedia?.kind, sel?.type, showBackground, hasVideo]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (!canRemoveSel) return;
+      e.preventDefault();
+      removeSelected();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canRemoveSel, removeSelected]);
 
   const selectTool = useCallback((id: ToolId) => {
     setActiveTool((cur) => (cur === id ? null : id));
@@ -787,6 +878,7 @@ export function BlobEditor({
                   width={stageSize}
                   height={stageSize}
                   playheadMs={playheadMs}
+                  playing={playing}
                   maskMode={maskMode}
                   brushSize={brushSize}
                   onBrushPaint={(x, y) => {
@@ -809,7 +901,10 @@ export function BlobEditor({
                 onTogglePlay={() => setPlaying((p) => !p)}
                 onTrimPrimary={(startMs, endMs) => {
                   if (!primaryMedia) return;
-                  const next = syncDurationFromPrimary(setTrim(history.present!, primaryMedia.id, startMs, endMs));
+                  const next = syncDurationFromPrimary(
+                    setTrim(history.present!, primaryMedia.id, startMs, endMs),
+                    maxMs,
+                  );
                   pushAndPreview(next);
                 }}
               />
@@ -824,6 +919,7 @@ export function BlobEditor({
                     { id: "cutout", label: "Cutout", available: toolsAvailable.cutout },
                     { id: "text", label: "Text", available: toolsAvailable.text },
                     { id: "canvas", label: "Canvas", available: toolsAvailable.canvas },
+                    { id: "video", label: "Video Settings", available: toolsAvailable.video },
                   ] as const
                 ).map((t) => ({ ...t }))}
                 active={activeTool}
@@ -835,11 +931,23 @@ export function BlobEditor({
                 onClose={() => setActiveTool(null)}
               >
                 {activeTool === "transform" && sel && (
-                  <TransformInspector
-                    obj={sel}
-                    onChange={(patch) => history.live(updateTransform(history.present!, sel.id, patch))}
-                    onCommit={commitPreview}
-                  />
+                  <div className="blob-tool-stack">
+                    <TransformInspector
+                      obj={sel}
+                      onChange={(patch) => history.live(updateTransform(history.present!, sel.id, patch))}
+                      onCommit={commitPreview}
+                    />
+                    {canRemoveSel && (
+                      <button
+                        type="button"
+                        className="blob-btn"
+                        style={{ minHeight: 44 }}
+                        onClick={removeSelected}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 )}
                 {activeTool === "crop" && selMedia && (
                   <CropInspector
@@ -895,6 +1003,16 @@ export function BlobEditor({
                           Overlay
                         </button>
                       )}
+                      {canRemoveSel && sel?.type === "text" && (
+                        <button
+                          type="button"
+                          className="blob-btn"
+                          style={{ minHeight: 44 }}
+                          onClick={removeSelected}
+                        >
+                          Remove
+                        </button>
+                      )}
                     </div>
                     {sel?.type === "text" && (
                       <TextInspector
@@ -905,37 +1023,37 @@ export function BlobEditor({
                     )}
                   </div>
                 )}
-                {activeTool === "canvas" && (
+                {activeTool === "canvas" && showBackground && (
                   <div className="blob-tool-stack">
-                    {showBackground && (
-                      <div className="blob-timeline-actions">
-                        <button
-                          type="button"
-                          className="blob-btn"
-                          style={{ minHeight: 44 }}
-                          onClick={() => pushAndPreview(setBackground(history.present!, "transparent"))}
-                        >
-                          Clear bg
-                        </button>
-                        <label className="blob-btn blob-color" style={{ minWidth: 44, minHeight: 44 }}>
-                          Bg
-                          <input
-                            type="color"
-                            value={bg === "transparent" ? "#ffffff" : bg}
-                            onChange={(e) =>
-                              pushAndPreview(setBackground(history.present!, e.target.value as Background))
-                            }
-                            aria-label="Background color"
-                          />
-                        </label>
-                      </div>
-                    )}
-                    <AudioInspector
-                      doc={history.present}
-                      onMuteChange={(mute) => history.live(setMuteSource(history.present!, mute))}
-                      onCommit={commitPreview}
-                    />
+                    <div className="blob-timeline-actions">
+                      <button
+                        type="button"
+                        className="blob-btn"
+                        style={{ minHeight: 44 }}
+                        onClick={() => pushAndPreview(setBackground(history.present!, "transparent"))}
+                      >
+                        Clear bg
+                      </button>
+                      <label className="blob-btn blob-color" style={{ minWidth: 44, minHeight: 44 }}>
+                        Bg
+                        <input
+                          type="color"
+                          value={bg === "transparent" ? "#ffffff" : bg}
+                          onChange={(e) =>
+                            pushAndPreview(setBackground(history.present!, e.target.value as Background))
+                          }
+                          aria-label="Background color"
+                        />
+                      </label>
+                    </div>
                   </div>
+                )}
+                {activeTool === "video" && (
+                  <VideoSettingsInspector
+                    doc={history.present}
+                    onMuteChange={(mute) => history.live(setMuteSource(history.present!, mute))}
+                    onCommit={commitPreview}
+                  />
                 )}
               </ToolPanel>
             </div>
