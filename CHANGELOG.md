@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+### Encode format matrix
+
+- **IMAGE:** chat / thumbnail / full remain stills (PNG→WebP/JPEG ladder).
+- **GIF:** chat (128) / thumbnail (256) / full (≤1024, budget may shrink) are `image/gif`.
+- **VIDEO:** thumbnail is silent `image/gif` @256; chat @128 and full @1024 are `video/mp4`.
+- `meta.firstFramePng` — first-frame still PNG for host WhatsApp OG (never gif/mp4).
+- `exports.gif` / `exports.video` alias thumbnail GIF / full MP4 for type detection.
+- `encodeGifUnderBudget(..., maxBytes?, maxEdge?)` — optional max edge per size slot.
+
 ## 0.3.0
 
 ### Fixes

@@ -89,17 +89,19 @@ function encodeOnce(
 
 /**
  * Encode RGBA frames as GIF under MAX_GIF_BYTES.
- * Downscales to ≤GIF_ENCODE_MAX_EDGE, shared palette, then reduces colors / drops frames.
+ * Downscales to ≤maxEdge (default GIF_ENCODE_MAX_EDGE), shared palette, then reduces colors / drops frames.
  */
 export async function encodeGifUnderBudget(
   frames: RgbaFrame[],
   delayCs: number,
   maxBytes = MAX_GIF_BYTES,
+  maxEdge: number = GIF_ENCODE_MAX_EDGE,
 ): Promise<Uint8Array> {
   if (!frames.length) throw new Error("encodeGifUnderBudget: no frames");
   const mod = await loadGifenc();
+  const edge = Math.max(1, maxEdge);
 
-  let working = frames.map((f) => downscaleRgba(f, GIF_ENCODE_MAX_EDGE));
+  let working = frames.map((f) => downscaleRgba(f, edge));
   let delay = Math.max(1, delayCs);
   const colorSteps = [256, 128, 64, 32];
 

@@ -379,28 +379,70 @@ async function encodeSilentMp4(
   outPath: string,
   ffmpeg: string,
   crf: number,
+  size: number,
 ): Promise<void> {
   const pattern = join(workDir, "f%05d.png");
-  await runFfmpeg(
-    [
-      "-y",
-      "-framerate",
-      String(fps),
-      "-i",
-      pattern,
-      "-pix_fmt",
-      "yuv420p",
-      "-t",
-      String(durationSec),
-      "-c:v",
-      "libx264",
-      "-crf",
-      String(crf),
-      "-an",
-      outPath,
-    ],
-    ffmpeg,
+  const args = [
+    "-y",
+    "-framerate",
+    String(fps),
+    "-i",
+    pattern,
+  ];
+  if (size && size !== CANVAS_SIZE) {
+    args.push("-vf", `scale=${size}:${size}`);
+  }
+  args.push(
+    "-pix_fmt",
+    "yuv420p",
+    "-t",
+    String(durationSec),
+    "-c:v",
+    "libx264",
+    "-crf",
+    String(crf),
+    "-an",
+    outPath,
   );
+  await runFfmpeg(args, ffmpeg);
+}
+
+/** CRF ladder → mp4 ≤ MAX_VIDEO_BYTES. */
+async function encodeMp4Ladder(
+  workDir: string,
+  fps: number,
+  durationSec: number,
+  ffmpeg: string,
+  size: number,
+  mux: ((silentMp4: string, outMp4: string) => Promise<boolean>) | null,
+): Promise<{ bytes: Uint8Array; hasAudio: boolean }> {
+  const silentMp4 = join(workDir, `silent_${size}.mp4`);
+  const outMp4 = join(workDir, `out_${size}.mp4`);
+  const crfs = [23, 28, 32, 36, 40];
+  let videoBytes: Uint8Array | null = null;
+  let muxedAudio = false;
+  for (const crf of crfs) {
+    await encodeSilentMp4(workDir, fps, durationSec, silentMp4, ffmpeg, crf, size);
+    if (mux) {
+      const ok = await mux(silentMp4, outMp4);
+      if (ok) {
+        videoBytes = new Uint8Array(await readFile(outMp4));
+        muxedAudio = true;
+      } else {
+        videoBytes = new Uint8Array(await readFile(silentMp4));
+        muxedAudio = false;
+      }
+    } else {
+      videoBytes = new Uint8Array(await readFile(silentMp4));
+      muxedAudio = false;
+    }
+    if (videoBytes.byteLength <= MAX_VIDEO_BYTES) break;
+    videoBytes = null;
+  }
+  if (!videoBytes) {
+    throw new Error(`Video encode exceeds ${MAX_VIDEO_BYTES} bytes after CRF ladder`);
+  }
+  return { bytes: videoBytes, hasAudio: muxedAudio };
 }
 
 async function muxAudio(
@@ -450,6 +492,13 @@ async function muxAudio(
  * GIF/video frames come from `bytesResolver` (not host-decoded frameResolver).
  * When mute_source is false, muxes trimmed source audio onto the composed mp4.
  * Enforces still ≤2MB, GIF ≤3MB, video ≤12MB.
+ *
+ * Format matrix (chat 128 / thumbnail 256 / full 1024):
+ * - image → stills in all three slots
+ * - gif → GIF in all three slots
+ * - video → GIF thumbnail, MP4 chat + full
+ *
+ * meta.firstFramePng is always a still first-frame PNG for WhatsApp OG (host-only).
  * Pass `opts.maxDurationMs` when the composition exceeds the default 10s cap.
  */
 export async function encodeComposition(
@@ -495,6 +544,9 @@ export async function encodeComposition(
     const maskBlob = await renderMaskBlob(doc, resolver0);
     if (maskBlob) mask = await blobToUint8(maskBlob);
 
+    // First-frame still PNG for WhatsApp OG — never gif/mp4 (pre-ladder).
+    const firstFramePng = await canvasToPngBytes(fullCanvas);
+
     const exports: EncodePayload["exports"] = {
       chat: chatEnc.bytes,
       thumbnail: thumbEnc.bytes,
@@ -531,52 +583,70 @@ export async function encodeComposition(
         await writeFile(join(workDir, `f${String(i).padStart(5, "0")}.png`), await canvasToPngBytes(canvas));
       }
 
-      if (needsGifExport(doc)) {
-        const delayCs = Math.max(1, Math.round(100 / fps));
-        exports.gif = await encodeGifUnderBudget(rgbaFrames, delayCs);
-        mimeTypes.gif = "image/gif";
-      }
+      const delayCs = Math.max(1, Math.round(100 / fps));
+      const isVideo = needsVideo(doc);
 
-      if (needsVideo(doc)) {
-        const silentMp4 = join(workDir, "silent.mp4");
-        const outMp4 = join(workDir, "out.mp4");
+      if (isVideo) {
+        // Matrix: thumb GIF @256, chat+full MP4 @128/1024
+        const thumbGif = await encodeGifUnderBudget(
+          rgbaFrames,
+          delayCs,
+          undefined,
+          EXPORT_SIZES.thumbnail,
+        );
+        exports.thumbnail = thumbGif;
+        mimeTypes.thumbnail = "image/gif";
+        exports.gif = thumbGif;
+        mimeTypes.gif = "image/gif";
+
         const durationSec = duration / 1000;
         const muted = doc.audio?.mute_source !== false;
         const primary = primaryMedia(doc);
         const videoSrc = primary && animated.get(primary.asset_id);
+        const mux =
+          !muted && videoSrc && videoSrc.kind === "video" && primary
+            ? (silentMp4: string, outMp4: string) =>
+                muxAudio(silentMp4, videoSrc, primary, durationSec, outMp4, ffmpeg)
+            : null;
 
-        // CRF ladder until ≤ MAX_VIDEO_BYTES
-        const crfs = [23, 28, 32, 36, 40];
-        let videoBytes: Uint8Array | null = null;
-        let muxedAudio = false;
-
-        for (const crf of crfs) {
-          await encodeSilentMp4(workDir, fps, durationSec, silentMp4, ffmpeg, crf);
-
-          if (!muted && videoSrc && videoSrc.kind === "video" && primary) {
-            const ok = await muxAudio(silentMp4, videoSrc, primary, durationSec, outMp4, ffmpeg);
-            if (ok) {
-              videoBytes = new Uint8Array(await readFile(outMp4));
-              muxedAudio = true;
-            } else {
-              videoBytes = new Uint8Array(await readFile(silentMp4));
-              muxedAudio = false;
-            }
-          } else {
-            videoBytes = new Uint8Array(await readFile(silentMp4));
-            muxedAudio = false;
-          }
-
-          if (videoBytes.byteLength <= MAX_VIDEO_BYTES) break;
-          videoBytes = null;
-        }
-
-        if (!videoBytes) {
-          throw new Error(`Video encode exceeds ${MAX_VIDEO_BYTES} bytes after CRF ladder`);
-        }
-        exports.video = videoBytes;
-        hasAudio = muxedAudio;
+        const fullVid = await encodeMp4Ladder(
+          workDir,
+          fps,
+          durationSec,
+          ffmpeg,
+          CANVAS_SIZE,
+          mux,
+        );
+        const chatVid = await encodeMp4Ladder(
+          workDir,
+          fps,
+          durationSec,
+          ffmpeg,
+          EXPORT_SIZES.chat,
+          mux,
+        );
+        exports.full = fullVid.bytes;
+        mimeTypes.full = "video/mp4";
+        exports.chat = chatVid.bytes;
+        mimeTypes.chat = "video/mp4";
+        exports.video = fullVid.bytes;
         mimeTypes.video = "video/mp4";
+        hasAudio = fullVid.hasAudio;
+      } else if (needsGif(doc)) {
+        // Matrix: GIF in chat / thumbnail / full (full may budget-cap below 1024)
+        const [chatGif, thumbGif, fullGif] = await Promise.all([
+          encodeGifUnderBudget(rgbaFrames, delayCs, undefined, EXPORT_SIZES.chat),
+          encodeGifUnderBudget(rgbaFrames, delayCs, undefined, EXPORT_SIZES.thumbnail),
+          encodeGifUnderBudget(rgbaFrames, delayCs, undefined, CANVAS_SIZE),
+        ]);
+        exports.chat = chatGif;
+        mimeTypes.chat = "image/gif";
+        exports.thumbnail = thumbGif;
+        mimeTypes.thumbnail = "image/gif";
+        exports.full = fullGif;
+        mimeTypes.full = "image/gif";
+        exports.gif = fullGif;
+        mimeTypes.gif = "image/gif";
       }
     }
 
@@ -590,6 +660,7 @@ export async function encodeComposition(
         duration_ms: doc.duration_ms,
         has_audio: hasAudio,
         mimeTypes,
+        firstFramePng,
       },
     };
   } finally {

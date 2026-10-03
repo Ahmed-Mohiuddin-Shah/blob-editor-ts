@@ -149,6 +149,8 @@ export interface EncodePayload {
       gif?: string;
       video?: string;
     };
+    /** First-frame still PNG for WhatsApp OG — never gif/mp4. */
+    firstFramePng?: Uint8Array;
   };
 }
 

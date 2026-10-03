@@ -123,8 +123,22 @@ const payload = await encodeComposition(doc, frameResolver, bytesResolver, {
 });
 // payload.exports: chat, thumbnail, full, mask?, gif?, video?
 // Budgets: stills ≤2MB, gif ≤3MB, video ≤12MB; duration ≤ maxDurationMs (default 10s)
-// gif also emitted for video compositions (composed silent preview)
 ```
+
+Kind-gated format matrix for the three size slots (`EXPORT_SIZES` / `CANVAS_SIZE`):
+
+| Primary kind | chat (128) | thumbnail (256) | full (1024) |
+|---|---|---|---|
+| **IMAGE** | still (PNG→WebP/JPEG ladder) | still | still |
+| **GIF** | `image/gif` | `image/gif` | `image/gif` (edge may shrink under budget) |
+| **VIDEO** | `video/mp4` | silent `image/gif` | `video/mp4` |
+
+- `meta.mimeTypes.chat|thumbnail|full` match the actual bytes in each slot.
+- `meta.firstFramePng` — still first-frame PNG @ full canvas (never gif/mp4); for host WhatsApp OG.
+- `exports.gif` / `exports.video` are **aliases** for type detection / storyboard:
+  - **VIDEO:** `gif` = thumbnail GIF; `video` = full MP4
+  - **GIF:** `gif` = full GIF (same bytes as `exports.full`)
+  - **IMAGE:** no `gif` / `video` keys
 
 ### Prepare before upload (browser)
 
@@ -175,7 +189,7 @@ import { pageA4, layoutGrid } from "blob-editor/print";
 
 `version: 2`, `canvas` 1024², `duration_ms`, `fps`, `audio: { mute_source } | null`, `objects[]` with media `kind` / single `keep` trim / `mask_asset_id` / `outline`. Snake_case JSON (`scale_x`, `asset_id`, `start_ms`, …).
 
-Host flow: UI exports document + still PNGs (+ optional mask) → POST to server → worker `encodeComposition` → gif/mp4.
+Host flow: UI exports document + client stills (+ optional mask) → POST to server → worker `encodeComposition` applies the format matrix (and alias `gif`/`video` when present).
 
 ## License
 

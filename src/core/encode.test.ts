@@ -5,10 +5,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import { loadImage } from "canvas";
-import { GifWriter } from "omggif";
+import { GifReader, GifWriter } from "omggif";
 import { decodeGifBytes, gifFrameAt } from "./gif.js";
+import { encodeGifUnderBudget } from "./gif-encode.js";
 import { encodeComposition, compositionNeedsAnimatedEncode } from "./encode.js";
 import { createFromSource, addText, setTrim, updateTransform } from "./ops.js";
+
+function isPng(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  );
+}
 
 const require = createRequire(import.meta.url);
 
@@ -145,7 +156,7 @@ describe("encodeComposition", () => {
     gifencOk = false;
   }
 
-  it("static image encode unchanged (png only)", async () => {
+  it("static image: stills + firstFramePng, no gif/video", async () => {
     const doc = createFromSource("img1", 1, 1, "#ffffff", { kind: "image" });
     const c = document.createElement("canvas");
     c.width = 1;
@@ -158,10 +169,16 @@ describe("encodeComposition", () => {
     expect(result.exports.full.byteLength).toBeGreaterThan(20);
     expect(result.exports.gif).toBeUndefined();
     expect(result.exports.video).toBeUndefined();
+    expect(result.meta.mimeTypes.chat).toMatch(/^image\//);
+    expect(result.meta.mimeTypes.thumbnail).toMatch(/^image\//);
+    expect(result.meta.mimeTypes.full).toMatch(/^image\//);
+    expect(result.meta.mimeTypes.chat).not.toBe("image/gif");
+    expect(result.meta.firstFramePng).toBeDefined();
+    expect(isPng(result.meta.firstFramePng!)).toBe(true);
     expect(compositionNeedsAnimatedEncode(doc)).toBe(false);
   });
 
-  it.skipIf(!gifencOk)("GIF roundtrip: distinct frames + duration from source", async () => {
+  it.skipIf(!gifencOk)("GIF roundtrip: matrix gif slots + distinct frames", async () => {
     const gifBytes = makeTwoToneGif();
     const decoded = decodeGifBytes(gifBytes);
     const doc = createFromSource("g1", decoded.width, decoded.height, "transparent", {
@@ -176,6 +193,12 @@ describe("encodeComposition", () => {
       async (id) => (id === "g1" ? gifBytes : null),
     );
     expect(result.exports.gif).toBeDefined();
+    expect(result.meta.mimeTypes.chat).toBe("image/gif");
+    expect(result.meta.mimeTypes.thumbnail).toBe("image/gif");
+    expect(result.meta.mimeTypes.full).toBe("image/gif");
+    expect(result.meta.mimeTypes.gif).toBe("image/gif");
+    expect(result.meta.firstFramePng).toBeDefined();
+    expect(isPng(result.meta.firstFramePng!)).toBe(true);
     expect(result.meta.duration_ms).toBe(1000);
     const means = await gifFrameMeans(result.exports.gif!);
     expect(means.length).toBeGreaterThanOrEqual(2);
@@ -207,7 +230,7 @@ describe("encodeComposition", () => {
   });
 
   it.skipIf(!ffmpeg || !gifencOk)(
-    "Video roundtrip via bytesResolver only → non-black video + gif",
+    "Video matrix: thumb gif, chat+full mp4, firstFramePng",
     async () => {
       const mp4 = await makeTinyMp4();
       const doc = createFromSource("v1", 64, 64, "#000000", {
@@ -220,10 +243,17 @@ describe("encodeComposition", () => {
         async () => null,
         async (id) => (id === "v1" ? mp4 : null),
       );
+      expect(result.meta.mimeTypes.thumbnail).toBe("image/gif");
+      expect(result.meta.mimeTypes.chat).toBe("video/mp4");
+      expect(result.meta.mimeTypes.full).toBe("video/mp4");
+      expect(result.meta.mimeTypes.video).toBe("video/mp4");
+      expect(result.meta.mimeTypes.gif).toBe("image/gif");
       expect(result.exports.video).toBeDefined();
       expect(result.exports.video!.byteLength).toBeGreaterThan(500);
       expect(result.exports.gif).toBeDefined();
-      expect(await pngMeanRed(result.exports.full)).toBeGreaterThan(20);
+      expect(result.meta.firstFramePng).toBeDefined();
+      expect(isPng(result.meta.firstFramePng!)).toBe(true);
+      expect(await pngMeanRed(result.meta.firstFramePng!)).toBeGreaterThan(20);
       const gifMeans = await gifFrameMeans(result.exports.gif!);
       expect(gifMeans.some((m) => m > 20)).toBe(true);
     },
@@ -246,7 +276,8 @@ describe("encodeComposition", () => {
       async (id) => (id === "v1" ? mp4 : null),
     );
     expect(result.exports.gif).toBeDefined();
-    expect(await pngLumaVariance(result.exports.full)).toBeGreaterThan(100);
+    expect(result.meta.firstFramePng).toBeDefined();
+    expect(await pngLumaVariance(result.meta.firstFramePng!)).toBeGreaterThan(100);
   });
 
   it.skipIf(!ffmpeg || !gifencOk)("Video seek at last ms does not ENOENT", async () => {
@@ -300,4 +331,26 @@ describe("encodeComposition", () => {
     expect(result.exports.video).toBeDefined();
     expect(result.exports.video!.byteLength).toBeLessThanOrEqual(12 * 1024 * 1024);
   }, 30_000);
+});
+
+describe("encodeGifUnderBudget", () => {
+  let gifencOk = false;
+  try {
+    require("gifenc");
+    gifencOk = true;
+  } catch {
+    gifencOk = false;
+  }
+
+  it.skipIf(!gifencOk)("maxEdge 128 produces dimensions ≤128", async () => {
+    const frame = {
+      data: new Uint8Array(256 * 256 * 4).fill(200),
+      width: 256,
+      height: 256,
+    };
+    const bytes = await encodeGifUnderBudget([frame], 7, undefined, 128);
+    const reader = new GifReader(Buffer.from(bytes));
+    expect(reader.width).toBeLessThanOrEqual(128);
+    expect(reader.height).toBeLessThanOrEqual(128);
+  });
 });
