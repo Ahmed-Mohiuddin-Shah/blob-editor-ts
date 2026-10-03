@@ -81,7 +81,7 @@ function encodeOnce(
   const palette = mod.quantize(merged, colors);
   for (const f of frames) {
     const index = mod.applyPalette(f.data, palette);
-    gif.writeFrame(index, f.width, f.height, { palette, delay: delayCs });
+    gif.writeFrame(index, f.width, f.height, { palette, delay: delayCs * 10 }); // gifenc delay is ms
   }
   gif.finish();
   return gif.bytes();
@@ -110,11 +110,12 @@ export async function encodeGifUnderBudget(
     if (bytes.byteLength <= maxBytes) return bytes;
   }
 
+  const originalTotalCs = delay * working.length;
   while (working.length > 1) {
     const next: RgbaFrame[] = [];
     for (let i = 0; i < working.length; i += 2) next.push(working[i]!);
     working = next;
-    delay = Math.min(100, delay * 2);
+    delay = Math.max(1, Math.min(655, Math.round(originalTotalCs / working.length)));
     for (const colors of [64, 32]) {
       const bytes = encodeOnce(mod, working, delay, colors);
       if (bytes.byteLength <= maxBytes) return bytes;

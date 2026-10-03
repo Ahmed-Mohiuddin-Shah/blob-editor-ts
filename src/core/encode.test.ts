@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -32,12 +33,65 @@ function resolveFfmpeg(): string | null {
   }
 }
 
-function makeTwoToneGif(): Uint8Array {
+function makeTwoToneGif(delayCs = 50): Uint8Array {
   const buf = Buffer.alloc(4096);
   const w = new GifWriter(buf, 4, 4, { palette: [0xff0000, 0x0000ff], loop: 0 });
-  w.addFrame(0, 0, 4, 4, new Array(16).fill(0), { delay: 50 });
-  w.addFrame(0, 0, 4, 4, new Array(16).fill(1), { delay: 50 });
+  w.addFrame(0, 0, 4, 4, new Array(16).fill(0), { delay: delayCs });
+  w.addFrame(0, 0, 4, 4, new Array(16).fill(1), { delay: delayCs });
   return new Uint8Array(buf.buffer, buf.byteOffset, w.end());
+}
+
+function gifDelayCsSum(bytes: Uint8Array): number {
+  const reader = new GifReader(Buffer.from(bytes));
+  let sum = 0;
+  for (let i = 0; i < reader.numFrames(); i++) sum += reader.frameInfo(i).delay || 0;
+  return sum;
+}
+
+function probeMp4DurationMs(bytes: Uint8Array, ffmpeg: string): number {
+  const tmp = join(tmpdir(), `blob-probe-${process.pid}-${Date.now()}.mp4`);
+  writeFileSync(tmp, bytes);
+  try {
+    const r = spawnSync(ffmpeg, ["-i", tmp], { encoding: "utf8" });
+    const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(r.stderr ?? "");
+    if (!m) throw new Error(`no duration in ffmpeg stderr: ${r.stderr}`);
+    return (Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])) * 1000;
+  } finally {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function makeColorMp4(durationSec: number): Promise<Uint8Array> {
+  const ffmpeg = resolveFfmpeg();
+  if (!ffmpeg) throw new Error("ffmpeg unavailable");
+  const dir = await mkdtemp(join(tmpdir(), "blob-vid-"));
+  try {
+    const out = join(dir, "t.mp4");
+    const r = spawnSync(
+      ffmpeg,
+      [
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        `color=c=red:s=64x64:d=${durationSec}`,
+        "-pix_fmt",
+        "yuv420p",
+        "-t",
+        String(durationSec),
+        out,
+      ],
+      { encoding: "utf8" },
+    );
+    if (r.status !== 0) throw new Error(`ffmpeg mp4 fixture failed: ${r.stderr}`);
+    return new Uint8Array(await readFile(out));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 async function makeTinyMp4(): Promise<Uint8Array> {
@@ -331,6 +385,63 @@ describe("encodeComposition", () => {
     expect(result.exports.video).toBeDefined();
     expect(result.exports.video!.byteLength).toBeLessThanOrEqual(12 * 1024 * 1024);
   }, 30_000);
+
+  it.skipIf(!gifencOk)("2s GIF + 10s doc encodes ~2s, not padded", async () => {
+    const gifBytes = makeTwoToneGif(100);
+    const decoded = decodeGifBytes(gifBytes);
+    expect(decoded.totalMs).toBe(2000);
+    const doc = createFromSource("g1", decoded.width, decoded.height, "transparent", {
+      kind: "gif",
+      durationMs: 10_000,
+      fps: 4,
+    });
+    const result = await encodeComposition(
+      doc,
+      async () => null,
+      async (id) => (id === "g1" ? gifBytes : null),
+    );
+    expect(result.meta.duration_ms).toBe(2000);
+    expect(decodeGifBytes(result.exports.gif!).totalMs).toBeLessThanOrEqual(2500);
+    expect(decodeGifBytes(result.exports.gif!).totalMs).toBeGreaterThanOrEqual(1500);
+  }, 30_000);
+
+  it.skipIf(!ffmpeg || !gifencOk)("2s video + 10s doc encodes ~2s, not padded", async () => {
+    const mp4 = await makeColorMp4(2);
+    const doc = createFromSource("v1", 64, 64, "#000000", {
+      kind: "video",
+      durationMs: 10_000,
+      fps: 2,
+    });
+    const result = await encodeComposition(
+      doc,
+      async () => null,
+      async (id) => (id === "v1" ? mp4 : null),
+    );
+    expect(result.meta.duration_ms).toBeGreaterThanOrEqual(1800);
+    expect(result.meta.duration_ms).toBeLessThanOrEqual(2200);
+    const outMs = probeMp4DurationMs(result.exports.video!, ffmpeg!);
+    expect(outMs).toBeGreaterThanOrEqual(1500);
+    expect(outMs).toBeLessThanOrEqual(2500);
+  }, 30_000);
+
+  it.skipIf(!ffmpeg || !gifencOk)("15s video + 10s cap trims ~10s at 1x", async () => {
+    const mp4 = await makeColorMp4(15);
+    const doc = createFromSource("v1", 64, 64, "#000000", {
+      kind: "video",
+      durationMs: 10_000,
+      fps: 2,
+    });
+    const result = await encodeComposition(
+      doc,
+      async () => null,
+      async (id) => (id === "v1" ? mp4 : null),
+    );
+    expect(result.meta.duration_ms).toBeGreaterThanOrEqual(9500);
+    expect(result.meta.duration_ms).toBeLessThanOrEqual(10_000);
+    const outMs = probeMp4DurationMs(result.exports.video!, ffmpeg!);
+    expect(outMs).toBeGreaterThanOrEqual(9000);
+    expect(outMs).toBeLessThanOrEqual(11_000);
+  }, 60_000);
 });
 
 describe("encodeGifUnderBudget", () => {
@@ -352,5 +463,24 @@ describe("encodeGifUnderBudget", () => {
     const reader = new GifReader(Buffer.from(bytes));
     expect(reader.width).toBeLessThanOrEqual(128);
     expect(reader.height).toBeLessThanOrEqual(128);
+  });
+
+  it.skipIf(!gifencOk)("dropping frames keeps total delay", async () => {
+    const n = 16;
+    const delayCs = 8;
+    const frames = Array.from({ length: n }, (_, i) => {
+      const data = new Uint8Array(48 * 48 * 4);
+      for (let p = 0; p < data.length; p += 4) {
+        data[p] = (i * 17 + p) % 256;
+        data[p + 1] = (i * 31) % 256;
+        data[p + 2] = (p / 4) % 256;
+        data[p + 3] = 255;
+      }
+      return { data, width: 48, height: 48 };
+    });
+    const bytes = await encodeGifUnderBudget(frames, delayCs, 2_500, 48);
+    const reader = new GifReader(Buffer.from(bytes));
+    expect(reader.numFrames()).toBeLessThan(n);
+    expect(gifDelayCsSum(bytes)).toBe(delayCs * n);
   });
 });

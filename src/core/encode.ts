@@ -26,7 +26,7 @@ import {
 import { renderFrame, renderMaskBlob } from "./render.js";
 import { decodeGifBytes, gifFrameAt, type GifFrameCanvas } from "./gif.js";
 import { encodeGifUnderBudget } from "./gif-encode.js";
-import { mapCompToSource } from "./timing.js";
+import { keepDurationMs, mapCompToSource } from "./timing.js";
 
 const require = createRequire(import.meta.url);
 
@@ -337,7 +337,9 @@ async function frameAt(
   if (sourceT == null) return null;
 
   if (src.kind === "gif") {
-    return gifFrameAt(src.frames, src.delaysMs, sourceT);
+    const total = src.delaysMs.reduce((a, b) => a + b, 0);
+    const t = total > 0 ? Math.min(sourceT, Math.max(0, total - 1)) : 0;
+    return gifFrameAt(src.frames, src.delaysMs, t);
   }
 
   const key = Math.round(sourceT);
@@ -347,6 +349,26 @@ async function frameAt(
   const frame = await extractVideoFrame(src, sourceT, outPng, ffmpeg);
   src.cache.set(key, frame);
   return frame;
+}
+
+async function primarySourceSpanMs(
+  doc: CompositionDocument,
+  animated: Map<string, AnimatedSource>,
+  ffmpeg: string,
+): Promise<number | null> {
+  const primary = primaryMedia(doc);
+  if (!primary) return null;
+  const src = animated.get(primary.asset_id);
+  if (!src) return null;
+  let span: number;
+  if (src.kind === "gif") {
+    span = src.delaysMs.reduce((a, b) => a + b, 0);
+  } else {
+    if (src.durationSec == null) src.durationSec = await probeDurationSec(src.path, ffmpeg);
+    span = src.durationSec != null && src.durationSec > 0 ? src.durationSec * 1000 : Number.POSITIVE_INFINITY;
+  }
+  if (src.keep) span = Math.min(span, keepDurationMs(src.keep));
+  return Number.isFinite(span) ? span : null;
 }
 
 function timedResolver(
@@ -561,14 +583,18 @@ export async function encodeComposition(
     };
 
     const fps = doc.fps || 15;
-    const duration = doc.duration_ms;
+    let duration = doc.duration_ms;
+    if (animatedNeeded) {
+      const span = await primarySourceSpanMs(doc, animated, ffmpeg);
+      if (span != null && span > 0) duration = Math.min(duration, span);
+    }
 
     if (duration > 0 && animatedNeeded) {
       const frameCount = Math.max(1, Math.ceil((duration / 1000) * fps));
       const rgbaFrames: { data: Uint8Array; width: number; height: number }[] = [];
 
       for (let i = 0; i < frameCount; i++) {
-        // Prefer last frame not exactly on duration_ms (exclusive trim / EOF)
+        // Prefer last frame not exactly on duration (exclusive trim / EOF)
         const t = Math.min(Math.max(0, duration - 1), (i / fps) * 1000);
         const overlays = await buildOverlays(animated, t, workDir, ffmpeg);
         const resolver = timedResolver(frameResolver, overlays);
@@ -584,6 +610,7 @@ export async function encodeComposition(
       }
 
       const delayCs = Math.max(1, Math.round(100 / fps));
+      const durationSec = frameCount / fps;
       const isVideo = needsVideo(doc);
 
       if (isVideo) {
@@ -599,7 +626,6 @@ export async function encodeComposition(
         exports.gif = thumbGif;
         mimeTypes.gif = "image/gif";
 
-        const durationSec = duration / 1000;
         const muted = doc.audio?.mute_source !== false;
         const primary = primaryMedia(doc);
         const videoSrc = primary && animated.get(primary.asset_id);
@@ -657,7 +683,7 @@ export async function encodeComposition(
         background: doc.canvas.background,
         width: CANVAS_SIZE,
         height: CANVAS_SIZE,
-        duration_ms: doc.duration_ms,
+        duration_ms: duration,
         has_audio: hasAudio,
         mimeTypes,
         firstFramePng,

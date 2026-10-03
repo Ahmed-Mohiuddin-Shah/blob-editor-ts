@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- **Encode duration:** sample only until source/keep ends (`maxDurationMs` is a trim cap, not a pad target). GIF budget frame-drops keep total delay (`delayCs` up to 655). ffmpeg `-t` is `frameCount / fps`.
+
 ## 0.4.0
 
 ### Encode format matrix
